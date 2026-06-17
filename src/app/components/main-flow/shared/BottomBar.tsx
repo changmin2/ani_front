@@ -8,6 +8,7 @@ type BottomBarProps = {
   rightLabel: string;
   onNext: () => void;
   disabled?: boolean;
+  onDisabledClick?: () => void;
 };
 
 export function BottomBar({
@@ -18,6 +19,7 @@ export function BottomBar({
   rightLabel,
   onNext,
   disabled,
+  onDisabledClick,
 }: BottomBarProps) {
   return (
     <div className="mt-5 flex min-h-20 items-center justify-between rounded-lg border border-slate-200 bg-white px-4 shadow-sm">
@@ -44,8 +46,15 @@ export function BottomBar({
           </button>
         )}
         <button
-          onClick={onNext}
-          disabled={disabled}
+          onClick={() => {
+            if (disabled) {
+              onDisabledClick?.();
+              return;
+            }
+
+            onNext();
+          }}
+          aria-disabled={disabled}
           className={[
             "flex h-12 min-w-72 items-center justify-center gap-3 rounded-lg text-[17px] font-extrabold shadow-sm transition",
             disabled

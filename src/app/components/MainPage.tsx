@@ -6,26 +6,40 @@ import { StepFourReview } from "./main-flow/steps/StepFourReview";
 import { StepOneUpload } from "./main-flow/steps/StepOneUpload";
 import { StepThreeProcessing } from "./main-flow/steps/StepThreeProcessing";
 import { StepTwoRecommendation } from "./main-flow/steps/StepTwoRecommendation";
-import type { FlowStep } from "./main-flow/types";
+import type { FlowExecutionSettings, FlowInput, FlowStep } from "./main-flow/types";
 
 export function MainPage() {
   const [step, setStep] = useState<FlowStep>(1);
+  const [flowInput, setFlowInput] = useState<FlowInput | null>(null);
+  const [executionSettings, setExecutionSettings] =
+    useState<FlowExecutionSettings | null>(null);
+
+  const handleInputComplete = (input: FlowInput) => {
+    setFlowInput(input);
+    setStep(2);
+  };
 
   return (
     <div className="min-h-screen bg-white text-slate-950">
       <FlowHeader />
       {step > 1 && <FlowStepper current={step} />}
-      {step === 1 && <StepOneUpload onNext={() => setStep(2)} />}
+      {step === 1 && <StepOneUpload onNext={handleInputComplete} />}
       {step === 2 && (
         <StepTwoRecommendation
           onBack={() => setStep(1)}
-          onNext={() => setStep(3)}
+          onNext={(settings) => {
+            setExecutionSettings(settings);
+            setStep(3);
+          }}
+          input={flowInput}
         />
       )}
       {step === 3 && (
         <StepThreeProcessing
           onBack={() => setStep(2)}
           onNext={() => setStep(4)}
+          input={flowInput}
+          settings={executionSettings}
         />
       )}
       {step === 4 && (

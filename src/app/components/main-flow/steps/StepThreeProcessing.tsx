@@ -8,19 +8,109 @@ import {
   Info,
   Sparkles,
 } from "lucide-react";
-import { coreNumbers, terminologyMatches } from "../flowData";
+import { terminologyMatches } from "../flowData";
 import { AiCube } from "../shared/AiCube";
 import { BottomBar } from "../shared/BottomBar";
+import type { FlowExecutionSettings, FlowInput } from "../types";
 
 type StepThreeProcessingProps = {
   onBack: () => void;
   onNext: () => void;
+  input: FlowInput | null;
+  settings: FlowExecutionSettings | null;
 };
 
-export function StepThreeProcessing({ onBack, onNext }: StepThreeProcessingProps) {
+function formatList(items: string[]) {
+  // "영어, 중국어 및 베트남어"처럼 화면 문장에 자연스럽게 들어갈 목록 문자열을 만든다.
+  if (items.length === 0) return "";
+  if (items.length === 1) return items[0];
+
+  return `${items.slice(0, -1).join(", ")} 및 ${items.at(-1)}`;
+}
+
+function getLanguageNames(settings: FlowExecutionSettings | null) {
+  // 2페이지 언어 라벨은 "베트남어 (Tiếng Việt)" 형태라, 진행 문구에는 앞의 한국어 이름만 사용한다.
+  return settings?.targetLanguages.map((language) => language.split(" ")[0]) ?? [];
+}
+
+function getCompletedDescription(input: FlowInput | null) {
+  // 백엔드 분석 결과에서 실제 추출된 포함 정보/핵심 수치/주의 문구 개수를 모아
+  // 3페이지 "방금 완료한 작업" 문장으로 보여준다.
+  const analysis = input?.analysisResponse?.analysis;
+  const includedInformation = analysis?.included_information ?? [];
+  const keyNumbers = analysis?.key_numbers_preview ?? [];
+  const legalNoticeCount = analysis?.legal_notice_detection?.count ?? 0;
+
+  const extractedItems = [
+    ...includedInformation,
+    ...keyNumbers.map((item) => item.label),
+    legalNoticeCount > 0 ? `법적/주의 문구 ${legalNoticeCount}건` : "",
+  ]
+    .filter(Boolean)
+    .filter((item, index, array) => array.indexOf(item) === index);
+
+  if (extractedItems.length === 0) {
+    return "문서 구조와 주요 정보를 추출했습니다.";
+  }
+
+  return `문서에서 ${formatList(extractedItems)}을 추출했습니다.`;
+}
+
+function getNextTaskDescription(settings: FlowExecutionSettings | null) {
+  // 2페이지에서 선택한 대상 언어에 맞춰 "다음 작업" 문구를 만든다.
+  // 예: 베트남어 + 중국어 선택 시 "베트남어 및 중국어 번역 초안..."으로 표시된다.
+  const languageNames = getLanguageNames(settings);
+  const languageText = formatList(languageNames);
+
+  if (!languageText) {
+    return "번역 초안을 생성한 뒤, 수치와 법적 고지 문구의 누락 여부를 검수합니다.";
+  }
+
+  return `${languageText} 번역 초안을 생성한 뒤, 수치와 법적 고지 문구의 누락 여부를 검수합니다.`;
+}
+
+function getDocumentStructure(input: FlowInput | null) {
+  // 백엔드 document_structure를 3페이지 "문서 구조 분석" 카드에 맞는 형태로 정리한다.
+  // 구조 분석 값이 비어 있으면 파일명/포함 정보/주의 문구 분석 결과로 fallback한다.
+  const analysis = input?.analysisResponse?.analysis;
+  const structure = analysis?.document_structure;
+  const fallbackTitle =
+    input?.mode === "file"
+      ? input.fileName.replace(/\.[^.]+$/, "")
+      : analysis?.document_type || "입력 문서";
+
+  return {
+    title: structure?.title || fallbackTitle,
+    bodySections:
+      structure?.body_sections?.length
+        ? structure.body_sections
+        : analysis?.included_information ?? [],
+    noticePhrases:
+      structure?.notice_phrases?.length
+        ? structure.notice_phrases
+        : analysis?.legal_notice_detection?.items ?? [],
+  };
+}
+
+export function StepThreeProcessing({
+  onBack,
+  onNext,
+  input,
+  settings,
+}: StepThreeProcessingProps) {
   const [ready, setReady] = useState(false);
+  // 아래 값들은 1페이지 분석 결과와 2페이지 실행 설정을 조합해 만든 3페이지 표시용 데이터다.
+  const completedDescription = getCompletedDescription(input);
+  const nextTaskDescription = getNextTaskDescription(settings);
+  const documentStructure = getDocumentStructure(input);
+  const keyNumbers = input?.analysisResponse?.analysis.key_numbers_preview ?? [];
+  const languageNames = getLanguageNames(settings);
+  const statusLanguageLabel =
+    languageNames.length > 0 ? `${formatList(languageNames)} 번역 준비 중` : "번역 준비 중";
 
   useEffect(() => {
+    // 현재는 실제 번역 API가 없으므로 짧은 처리 대기 후 다음 단계 버튼을 활성화한다.
+    // 추후 번역/검수 API가 생기면 이 timer 대신 실제 작업 완료 상태를 연결하면 된다.
     const timer = window.setTimeout(() => setReady(true), 900);
     return () => window.clearTimeout(timer);
   }, []);
@@ -43,7 +133,7 @@ export function StepThreeProcessing({ onBack, onNext }: StepThreeProcessingProps
               <div className="mt-5 flex flex-wrap gap-4">
                 <StatusPill color="red" label="승인 번역 데이터 참조 중" />
                 <StatusPill color="amber" label="금융용어 표준 표현 적용 중" />
-                <StatusPill color="blue" label="영어 번역 준비 중" />
+                <StatusPill color="blue" label={statusLanguageLabel} />
               </div>
               <p className="mt-6 flex items-center gap-3 text-[16px] font-bold text-slate-800">
                 <Clock3 size={22} className="text-slate-500" />
@@ -63,7 +153,7 @@ export function StepThreeProcessing({ onBack, onNext }: StepThreeProcessingProps
             <ProcessItem
               done
               title="방금 완료한 작업"
-              desc="문서에서 금리, 가입기간, 우대조건, 예금자보호 문구를 추출했습니다."
+              desc={completedDescription}
             />
             <ProcessItem
               active
@@ -72,7 +162,7 @@ export function StepThreeProcessing({ onBack, onNext }: StepThreeProcessingProps
             />
             <ProcessItem
               title="다음 작업"
-              desc="영어 번역 초안을 생성한 뒤, 수치와 법적 고지 문구의 누락 여부를 검수합니다."
+              desc={nextTaskDescription}
             />
           </div>
           <button className="mt-10 flex h-13 w-full items-center justify-between rounded-lg border border-slate-200 px-5 text-[16px] font-extrabold text-slate-950">
@@ -89,11 +179,19 @@ export function StepThreeProcessing({ onBack, onNext }: StepThreeProcessingProps
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <PreviewCard title="문서 구조 분석" tone="red">
               <p className="font-extrabold">제목</p>
-              <p>BNK 더 편한 정기예금</p>
+              <p>{documentStructure.title || "-"}</p>
               <p className="mt-3 font-extrabold">본문 영역</p>
-              <p>상품 개요, 가입 대상, 가입 기간, 우대금리 조건, 해지 조건</p>
+              <p>
+                {documentStructure.bodySections.length > 0
+                  ? documentStructure.bodySections.join(", ")
+                  : "-"}
+              </p>
               <p className="mt-3 font-extrabold">주의 문구</p>
-              <p>예금자보호, 중도해지 유의사항</p>
+              <p>
+                {documentStructure.noticePhrases.length > 0
+                  ? documentStructure.noticePhrases.join(", ")
+                  : "감지된 주의 문구 없음"}
+              </p>
             </PreviewCard>
             <PreviewCard title="금융용어 매칭" tone="amber">
               {terminologyMatches.map(([ko, en]) => (
@@ -106,13 +204,19 @@ export function StepThreeProcessing({ onBack, onNext }: StepThreeProcessingProps
               <p className="mt-5 text-right font-bold text-slate-600">총 12건 매칭 완료</p>
             </PreviewCard>
             <PreviewCard title="핵심 수치 검수 대상" tone="green">
-              {coreNumbers.slice(0, 5).map((item) => (
-                <div key={item.label} className="grid grid-cols-[100px_1fr] py-1">
-                  <b>{item.label}</b>
-                  <span className="text-right">{item.value}</span>
-                </div>
-              ))}
-              <p className="mt-5 text-right font-bold text-slate-600">총 6건 수치 검수 예정</p>
+              {keyNumbers.length > 0 ? (
+                keyNumbers.map((item) => (
+                  <div key={`${item.label}-${item.value}`} className="grid grid-cols-[100px_1fr] py-1">
+                    <b>{item.label}</b>
+                    <span className="text-right">{item.value}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-slate-500">원문에서 확인된 핵심 수치가 없습니다.</p>
+              )}
+              <p className="mt-5 text-right font-bold text-slate-600">
+                총 {keyNumbers.length}건 수치 검수 예정
+              </p>
             </PreviewCard>
           </div>
 

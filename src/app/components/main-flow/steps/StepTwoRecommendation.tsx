@@ -1,4 +1,4 @@
-import type { ElementType, ReactNode } from "react";
+import { useEffect, useState, type ElementType, type ReactNode } from "react";
 import {
   Check,
   ChevronDown,
@@ -9,18 +9,137 @@ import {
   Plus,
   ShieldCheck,
   Sparkles,
+  Type,
   Users,
   X,
 } from "lucide-react";
-import { coreNumbers, detectedInfo, reviewChecks } from "../flowData";
+import { analyzeInput, formatFileSize } from "../analyzeInput";
+import { reviewChecks } from "../flowData";
 import { BottomBar } from "../shared/BottomBar";
+import type {
+  AnalysisResult,
+  FlowExecutionSettings,
+  FlowInput,
+  RetrievedDocument,
+} from "../types";
 
 type StepTwoRecommendationProps = {
   onBack: () => void;
-  onNext: () => void;
+  onNext: (settings: FlowExecutionSettings) => void;
+  input: FlowInput | null;
 };
 
-export function StepTwoRecommendation({ onBack, onNext }: StepTwoRecommendationProps) {
+const documentTypeOptions = [
+  "금융 상품안내문",
+  "마케팅 콘텐츠",
+  "고객 안내서",
+];
+
+const languageOptions = [
+  "영어 (English)",
+  "중국어 (中文)",
+  "베트남어 (Tiếng Việt)",
+  "카자흐스탄어 (Қазақша)",
+];
+
+const publishChannelOptions = [
+  "모바일 앱 공지",
+  "홈페이지 안내",
+  "영업점 게시문",
+  "SNS 카드뉴스",
+  "배너",
+];
+
+const toneStyleOptions = [
+  "쉽고 명확한 고객 안내 표현",
+  "공식적이고 신뢰감 있는 금융 문체",
+  "법적 고지 중심의 정확한 표현",
+  "마케팅용 간결하고 설득력 있는 표현",
+  "외국인 고객 대상 쉬운 설명형 표현",
+];
+
+function normalizeDocumentType(documentType: string) {
+  const matched = documentTypeOptions.find((option) =>
+    option.replace(/\s/g, "") === documentType.replace(/\s/g, "")
+  );
+
+  return matched || "금융 상품안내문";
+}
+
+function getDefaultToneStyle(documentType: string) {
+  switch (normalizeDocumentType(documentType)) {
+    case "마케팅 콘텐츠":
+      return "마케팅용 간결하고 설득력 있는 표현";
+    case "고객 안내서":
+      return "쉽고 명확한 고객 안내 표현";
+    case "금융 상품안내문":
+    default:
+      return "공식적이고 신뢰감 있는 금융 문체";
+  }
+}
+
+export function StepTwoRecommendation({ onBack, onNext, input }: StepTwoRecommendationProps) {
+  // StepOneUpload에서 받아온 백엔드 분석 결과를 화면용 AnalysisResult로 변환한다.
+  const analysis = analyzeInput(input);
+  const confidencePercent = Math.round(
+    Math.min(Math.max(analysis.confidence, 0), 1) * 100
+  );
+  const [selectedDocumentType, setSelectedDocumentType] = useState(
+    normalizeDocumentType(analysis.documentType)
+  );
+  const [selectedToneStyle, setSelectedToneStyle] = useState(
+    getDefaultToneStyle(analysis.documentType)
+  );
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
+  const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
+  const [selectedPublishChannels, setSelectedPublishChannels] = useState<string[]>(
+    publishChannelOptions.slice(0, 3)
+  );
+  const [selectedReviewChecks, setSelectedReviewChecks] = useState<string[]>([
+    ...reviewChecks,
+  ]);
+  const [isEvidenceOpen, setIsEvidenceOpen] = useState(false);
+  const [validationMessage, setValidationMessage] = useState("");
+  const retrievedDocuments = input?.analysisResponse?.retrieved_documents ?? [];
+  // 실행 전에 반드시 선택되어야 하는 설정들.
+  // 버튼은 항상 활성 상태로 보이지만, 누락 항목이 있으면 다음 단계로 넘기지 않고 안내 문구를 띄운다.
+  const missingRequiredSettings = [
+    !selectedDocumentType && "문서 유형",
+    selectedLanguages.length === 0 && "대상 언어",
+    selectedPublishChannels.length === 0 && "게시 채널",
+    !selectedToneStyle && "톤 & 스타일",
+    selectedReviewChecks.length === 0 && "검수 기준",
+  ].filter(Boolean);
+  const canRunReview = missingRequiredSettings.length === 0;
+  const requiredSettingsMessage = canRunReview
+    ? "실행 설정이 모두 선택되었습니다."
+    : `${missingRequiredSettings.join(", ")} 선택이 필요합니다.`;
+  const runReview = () => {
+    if (!canRunReview) {
+      setValidationMessage(requiredSettingsMessage);
+      return;
+    }
+
+    // 사용자가 2페이지에서 최종 선택한 실행 설정을 3페이지로 넘긴다.
+    // 3페이지는 이 값을 사용해 "다음 작업" 문구와 번역 대상 언어 표시를 동적으로 만든다.
+    onNext({
+      documentType: selectedDocumentType,
+      targetLanguages: selectedLanguages,
+      publishChannels: selectedPublishChannels,
+      toneStyle: selectedToneStyle,
+      reviewChecks: selectedReviewChecks,
+    });
+  };
+
+  useEffect(() => {
+    // API 분석 결과가 바뀌면 문서 유형과 톤 기본 추천도 다시 맞춘다.
+    // 사용자가 문서 유형을 직접 바꾸는 경우에도 같은 추천 규칙을 적용한다.
+    const nextDocumentType = normalizeDocumentType(analysis.documentType);
+
+    setSelectedDocumentType(nextDocumentType);
+    setSelectedToneStyle(getDefaultToneStyle(nextDocumentType));
+  }, [analysis.documentType]);
+
   return (
     <div className="mx-auto max-w-[1460px] px-8 py-7">
       <div className="flex items-start justify-between">
@@ -36,12 +155,12 @@ export function StepTwoRecommendation({ onBack, onNext }: StepTwoRecommendationP
           <Sparkles size={25} />
           <span className="text-[18px] font-extrabold">AI 추천</span>
           <span className="text-[16px] font-bold">신뢰도</span>
-          <span className="text-[28px] font-black">92%</span>
+          <span className="text-[28px] font-black">{confidencePercent}%</span>
         </div>
       </div>
 
       <div className="mt-7 grid grid-cols-1 gap-6 lg:grid-cols-[560px_1fr]">
-        <SummaryPanel />
+        <SummaryPanel input={input} analysis={analysis} />
 
         <section className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
           <h2 className="text-[22px] font-black text-slate-950">AI 추천 실행 설정</h2>
@@ -51,98 +170,351 @@ export function StepTwoRecommendation({ onBack, onNext }: StepTwoRecommendationP
 
           <div className="mt-7 grid gap-7">
             <SettingRow icon={FileText} label="문서 유형">
-              <div className="flex h-12 items-center justify-between rounded-lg border border-slate-200 px-4">
-                <span className="font-bold text-slate-950">금융상품 안내문</span>
+              <div className="relative flex h-12 items-center rounded-lg border border-slate-200 px-4">
+                <select
+                  value={selectedDocumentType}
+                  onChange={(event) => {
+                    const nextDocumentType = event.target.value;
+
+                    setSelectedDocumentType(nextDocumentType);
+                    setSelectedToneStyle(getDefaultToneStyle(nextDocumentType));
+                    setValidationMessage("");
+                  }}
+                  className="h-full flex-1 appearance-none bg-transparent pr-32 text-[16px] font-bold text-slate-950 outline-none"
+                >
+                  {documentTypeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
                 <div className="flex items-center gap-4">
                   <span className="rounded-full bg-red-50 px-3 py-1 text-[12px] font-extrabold text-red-600">
                     AI 추천
                   </span>
-                  <ChevronDown size={18} className="text-slate-500" />
+                  <ChevronDown size={18} className="pointer-events-none text-slate-500" />
                 </div>
               </div>
             </SettingRow>
 
             <SettingRow icon={Users} label="대상 언어">
-              <div className="flex flex-wrap gap-3">
-                {["영어 (English)", "베트남어 (Tiếng Việt)"].map((lang) => (
+              <div className="relative flex flex-wrap gap-3">
+                {selectedLanguages.map((lang) => (
                   <span key={lang} className="flex h-11 items-center gap-3 rounded-full border border-slate-200 bg-slate-100 px-5 text-[16px] font-semibold text-slate-800">
                     {lang}
-                    <X size={16} className="text-slate-500" />
+                    <button
+                      onClick={() =>
+                        setSelectedLanguages((current) =>
+                          current.filter((item) => item !== lang)
+                        )
+                      }
+                      onMouseDown={() => setValidationMessage("")}
+                    >
+                      <X size={16} className="text-slate-500" />
+                    </button>
                   </span>
                 ))}
-                <button className="flex h-11 items-center gap-3 rounded-lg border border-slate-200 px-5 text-[16px] font-semibold text-slate-700">
+                <button
+                  onClick={() => setIsLanguageMenuOpen((open) => !open)}
+                  className="flex h-11 items-center gap-3 rounded-lg border border-slate-200 px-5 text-[16px] font-semibold text-slate-700"
+                >
                   <Plus size={18} />
                   언어 추가
                 </button>
+                {isLanguageMenuOpen && (
+                  <div className="absolute left-0 top-14 z-10 w-[260px] rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                    {languageOptions.map((lang) => {
+                      const isSelected = selectedLanguages.includes(lang);
+
+                      return (
+                        <button
+                          key={lang}
+                          onClick={() => {
+                            setSelectedLanguages((current) =>
+                              isSelected
+                                ? current.filter((item) => item !== lang)
+                                : [...current, lang]
+                            );
+                            setIsLanguageMenuOpen(false);
+                            setValidationMessage("");
+                          }}
+                          className={[
+                            "flex h-11 w-full items-center justify-between rounded-md px-3 text-left text-[15px] font-semibold",
+                            isSelected
+                              ? "bg-red-50 text-red-600"
+                              : "text-slate-700 hover:bg-slate-50",
+                          ].join(" ")}
+                        >
+                          <span>{lang}</span>
+                          {isSelected && <Check size={16} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </SettingRow>
 
             <SettingRow icon={Link2} label="게시 채널" hint="(복수 선택 가능)">
               <div className="grid grid-cols-2 gap-x-14 gap-y-4 xl:grid-cols-3">
-                {["모바일 앱 공지", "홈페이지 안내", "영업점 게시문", "SNS 카드뉴스", "배너"].map((item, index) => (
-                  <CheckOption key={item} checked={index < 3} label={item} />
+                {publishChannelOptions.map((item) => (
+                  <CheckOption
+                    key={item}
+                    checked={selectedPublishChannels.includes(item)}
+                    label={item}
+                    onToggle={() =>
+                      setSelectedPublishChannels((current) =>
+                        current.includes(item)
+                          ? current.filter((selected) => selected !== item)
+                          : [...current, item]
+                      )
+                    }
+                    onAfterToggle={() => setValidationMessage("")}
+                  />
                 ))}
               </div>
             </SettingRow>
 
             <SettingRow icon={Circle} label="톤 & 스타일">
-              <div className="flex h-12 items-center justify-between rounded-lg border border-slate-200 px-4">
-                <span className="font-bold text-slate-950">쉽고 명확한 고객 안내 표현</span>
-                <ChevronDown size={18} className="text-slate-500" />
+              <div className="relative flex h-12 items-center rounded-lg border border-slate-200 px-4">
+                <select
+                  value={selectedToneStyle}
+                  onChange={(event) => setSelectedToneStyle(event.target.value)}
+                  onClick={() => setValidationMessage("")}
+                  className="h-full flex-1 appearance-none bg-transparent pr-10 text-[16px] font-bold text-slate-950 outline-none"
+                >
+                  {toneStyleOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={18} className="pointer-events-none text-slate-500" />
               </div>
             </SettingRow>
 
             <SettingRow icon={ShieldCheck} label="검수 기준" hint="(복수 선택 가능)">
               <div className="grid grid-cols-1 gap-x-16 gap-y-4 xl:grid-cols-2">
                 {reviewChecks.map((item) => (
-                  <CheckOption key={item} checked label={item} />
+                  <CheckOption
+                    key={item}
+                    checked={selectedReviewChecks.includes(item)}
+                    label={item}
+                    onToggle={() =>
+                      setSelectedReviewChecks((current) =>
+                        current.includes(item)
+                          ? current.filter((selected) => selected !== item)
+                          : [...current, item]
+                      )
+                    }
+                    onAfterToggle={() => setValidationMessage("")}
+                  />
                 ))}
               </div>
             </SettingRow>
           </div>
 
-          <button className="mt-8 flex h-12 w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-5 text-[15px] font-extrabold text-slate-800">
+          <button
+            onClick={() => setIsEvidenceOpen((open) => !open)}
+            className="mt-8 flex h-12 w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-5 text-[15px] font-extrabold text-slate-800"
+          >
             <span className="flex items-center gap-3">
               <Info size={18} className="text-amber-600" />
               AI 추천 근거 보기
             </span>
-            <ChevronDown size={18} className="text-blue-700" />
+            <ChevronDown
+              size={18}
+              className={[
+                "text-blue-700 transition",
+                isEvidenceOpen ? "rotate-180" : "",
+              ].join(" ")}
+            />
           </button>
+
+          {isEvidenceOpen && (
+            <EvidencePanel documents={retrievedDocuments} />
+          )}
+
+          {validationMessage && (
+            <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-5 py-4 text-[14px] font-extrabold text-rose-700">
+              {validationMessage}
+            </div>
+          )}
         </section>
       </div>
 
       <BottomBar
         leftLabel="이전으로"
         onBack={onBack}
+        helper={requiredSettingsMessage}
         rightLabel="번역 및 검수 실행"
-        onNext={onNext}
+        onNext={runReview}
       />
     </div>
   );
 }
 
-function SummaryPanel() {
+function EvidencePanel({ documents }: { documents: RetrievedDocument[] }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-[20px] font-extrabold text-slate-950">업로드 문서 요약</h2>
-      <div className="mt-5 flex items-center justify-between rounded-lg border border-slate-200 px-4 py-4">
-        <div className="flex items-center gap-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-md bg-red-600 text-white">
-            <FileText size={23} />
-          </div>
-          <div>
-            <p className="text-[16px] font-bold text-slate-950">BNK_외국인 고객 예금상품 안내문.pdf</p>
-            <p className="mt-1 text-[14px] text-slate-500">PDF · 1.2MB · 3페이지</p>
-          </div>
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-[15px] font-extrabold text-slate-950">
+            AI Search 검색 근거
+          </h3>
+          <p className="mt-1 text-[13px] font-semibold text-slate-500">
+            문서 유형과 추천 설정 판단에 참고한 관련 문서입니다.
+          </p>
         </div>
-        <span className="rounded-full bg-emerald-100 px-3 py-1 text-[12px] font-extrabold text-emerald-700">
-          업로드 완료
+        <span className="rounded-full bg-white px-3 py-1 text-[12px] font-extrabold text-slate-600">
+          {documents.length}건
         </span>
       </div>
 
+      <div className="mt-4 max-h-[360px] space-y-3 overflow-y-auto pr-1">
+        {documents.length > 0 ? (
+          documents.map((document, index) => (
+            <div
+              key={`${document.id}-${index}`}
+              className="rounded-lg border border-slate-200 bg-white p-4"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-extrabold text-red-600">
+                      {document.category || "분류 없음"}
+                    </span>
+                    <span className="text-[12px] font-bold text-slate-400">
+                      {document.id}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[15px] font-extrabold text-slate-950">
+                    {document.title || "제목 없음"}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-[11px] font-bold text-slate-400">관련도 점수</p>
+                  <p className="mt-1 text-[13px] font-extrabold text-slate-700">
+                    {typeof document.score === "number"
+                      ? document.score.toFixed(4)
+                      : "-"}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-3 text-[14px] font-medium leading-6 text-slate-700">
+                {document.content || "내용 없음"}
+              </p>
+
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                <span className="text-[12px] font-bold text-slate-500">
+                  원본 파일
+                </span>
+                <span className="text-[12px] font-extrabold text-slate-700">
+                  {document.source_file || "-"}
+                </span>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+            <p className="text-[14px] font-bold text-slate-500">
+              표시할 검색 근거가 없습니다.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SummaryPanel({
+  input,
+  analysis,
+}: {
+  input: FlowInput | null;
+  analysis: AnalysisResult;
+}) {
+  const coreRows = [
+    { label: "기본금리", value: analysis.coreNumbers.baseRate },
+    { label: "우대금리", value: analysis.coreNumbers.preferentialRate },
+    { label: "가입기간", value: analysis.coreNumbers.term },
+    { label: "예금자보호", value: analysis.coreNumbers.protection },
+    { label: "중도해지 이율", value: analysis.coreNumbers.earlyWithdrawal },
+  ].filter((item) => item.value && item.value !== "-");
+
+  const keyNumberRows =
+    analysis.keyNumbersPreview.length > 0
+      ? analysis.keyNumbersPreview
+      : coreRows;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-[20px] font-extrabold text-slate-950">
+        {input?.mode === "text" ? "입력 텍스트 요약" : "업로드 문서 요약"}
+      </h2>
+      <div className="mt-5 flex items-center justify-between rounded-lg border border-slate-200 px-4 py-4">
+        <div className="flex items-center gap-4">
+          <div className="flex h-11 w-11 items-center justify-center rounded-md bg-red-600 text-white">
+            {input?.mode === "text" ? <Type size={23} /> : <FileText size={23} />}
+          </div>
+          <div>
+            <p className="text-[16px] font-bold text-slate-950">
+              {input?.mode === "text"
+                ? "직접 입력한 금융문서 텍스트"
+                : input?.fileName ?? "업로드된 문서가 없습니다"}
+            </p>
+            <p className="mt-1 text-[14px] text-slate-500">
+              {input?.mode === "text"
+                ? `${input.text.length.toLocaleString()}자`
+                : input
+                  ? `${input.fileType || "FILE"} · ${formatFileSize(input.fileSize)}`
+                  : "파일 또는 텍스트를 먼저 입력해주세요"}
+            </p>
+          </div>
+        </div>
+        <span className="rounded-full bg-emerald-100 px-3 py-1 text-[12px] font-extrabold text-emerald-700">
+          {input?.mode === "text" ? "입력 완료" : "업로드 완료"}
+        </span>
+      </div>
+
+      {input?.mode === "text" && (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="mb-2 text-[13px] font-extrabold text-slate-500">입력 내용</p>
+          <p className="max-h-32 overflow-y-auto text-[14px] font-medium leading-7 text-slate-700">
+            {input.text}
+          </p>
+        </div>
+      )}
+
       <h3 className="mt-6 text-[16px] font-extrabold text-slate-950">AI가 감지한 문서 정보</h3>
       <div className="mt-4 space-y-4">
-        {detectedInfo.map((item) => {
+        {[
+          {
+            icon: Sparkles,
+            label: "문서 유형",
+            value: analysis.documentType,
+            color: "bg-red-50 text-red-600",
+          },
+          {
+            icon: Users,
+            label: "문서 성격",
+            value: analysis.documentCharacter,
+            color: "bg-slate-100 text-slate-600",
+          },
+          {
+            icon: FileText,
+            label: "포함 정보",
+            value: analysis.includedInfo,
+            color: "bg-emerald-50 text-emerald-600",
+          },
+          {
+            icon: Info,
+            label: "법적/주의 문구 감지",
+            value: `${analysis.legalNoticeCount}건`,
+            color: "bg-amber-50 text-amber-600",
+          },
+        ].map((item) => {
           const Icon = item.icon;
           return (
             <div key={item.label} className="flex gap-4">
@@ -166,18 +538,21 @@ function SummaryPanel() {
           </button>
         </div>
         <div className="mt-4 space-y-3">
-          {coreNumbers.map((item) => {
-            const Icon = item.icon;
+          {keyNumberRows.length > 0 ? keyNumberRows.map((item) => {
             return (
               <div key={item.label} className="grid grid-cols-[32px_100px_1fr] items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-red-500">
-                  <Icon size={17} />
+                  <Check size={17} />
                 </div>
                 <span className="text-[14px] font-extrabold text-slate-800">{item.label}</span>
                 <span className="text-[14px] font-medium text-slate-600">{item.value}</span>
               </div>
             );
-          })}
+          }) : (
+            <p className="text-[14px] font-medium text-slate-500">
+              원문에서 확인된 핵심 수치가 없습니다.
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -211,9 +586,27 @@ function SettingRow({
   );
 }
 
-function CheckOption({ checked, label }: { checked: boolean; label: string }) {
+function CheckOption({
+  checked,
+  label,
+  onToggle,
+  onAfterToggle,
+}: {
+  checked: boolean;
+  label: string;
+  onToggle: () => void;
+  onAfterToggle?: () => void;
+}) {
   return (
-    <label className="flex items-center gap-3 text-[15px] font-bold text-slate-950">
+    <button
+      type="button"
+      onClick={() => {
+        onToggle();
+        onAfterToggle?.();
+      }}
+      className="flex items-center gap-3 text-left text-[15px] font-bold text-slate-950"
+      aria-pressed={checked}
+    >
       <span
         className={[
           "flex h-5 w-5 items-center justify-center rounded border",
@@ -223,6 +616,6 @@ function CheckOption({ checked, label }: { checked: boolean; label: string }) {
         {checked && <Check size={14} />}
       </span>
       {label}
-    </label>
+    </button>
   );
 }
