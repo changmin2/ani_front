@@ -8,10 +8,27 @@ import {
   Info,
   Sparkles,
 } from "lucide-react";
-import { terminologyMatches } from "../flowData";
 import { AiCube } from "../shared/AiCube";
 import { BottomBar } from "../shared/BottomBar";
 import type { FlowExecutionSettings, FlowInput } from "../types";
+
+const API_BASE_URL = "http://localhost:8000";
+
+type FinanceTermMatch = {
+  id: string;
+  term_ko: string;
+  term_en: string;
+  term_vi: string;
+  term_zh: string;
+  term_kk: string;
+  description: string;
+  score?: number;
+};
+
+type TermLanguage = {
+  label: string;
+  field: "term_en" | "term_vi" | "term_zh" | "term_kk";
+};
 
 type StepThreeProcessingProps = {
   onBack: () => void;
@@ -31,6 +48,21 @@ function formatList(items: string[]) {
 function getLanguageNames(settings: FlowExecutionSettings | null) {
   // 2페이지 언어 라벨은 "베트남어 (Tiếng Việt)" 형태라, 진행 문구에는 앞의 한국어 이름만 사용한다.
   return settings?.targetLanguages.map((language) => language.split(" ")[0]) ?? [];
+}
+
+function getSelectedTermLanguages(settings: FlowExecutionSettings | null): TermLanguage[] {
+  const languages = settings?.targetLanguages ?? [];
+
+  return languages
+    .map((language) => {
+      if (language.startsWith("영어")) return { label: "EN", field: "term_en" } as const;
+      if (language.startsWith("중국어")) return { label: "ZH", field: "term_zh" } as const;
+      if (language.startsWith("베트남어")) return { label: "VI", field: "term_vi" } as const;
+      if (language.startsWith("카자흐스탄어")) return { label: "KK", field: "term_kk" } as const;
+
+      return null;
+    })
+    .filter((language): language is TermLanguage => Boolean(language));
 }
 
 function getCompletedDescription(input: FlowInput | null) {
@@ -69,6 +101,48 @@ function getNextTaskDescription(settings: FlowExecutionSettings | null) {
   return `${languageText} 번역 초안을 생성한 뒤, 수치와 법적 고지 문구의 누락 여부를 검수합니다.`;
 }
 
+function formatDuration(seconds: number) {
+  if (seconds < 60) return `약 ${seconds}초`;
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (remainingSeconds === 0) return `약 ${minutes}분`;
+
+  return `약 ${minutes}분 ${remainingSeconds}초`;
+}
+
+function getEstimatedProcessingTime(
+  settings: FlowExecutionSettings | null,
+  input: FlowInput | null
+) {
+  const languageCount = settings?.targetLanguages.length ?? 0;
+  const keyNumberCount = input?.analysisResponse?.analysis.key_numbers_preview?.length ?? 0;
+  const noticeCount = input?.analysisResponse?.analysis.legal_notice_detection?.count ?? 0;
+  const sourceLength = getSourceText(input).length;
+  const lengthSeconds = sourceLength > 3000 ? 40 : sourceLength > 1200 ? 25 : 10;
+  const baseSeconds = 45;
+  const estimatedSeconds =
+    baseSeconds +
+    Math.max(languageCount, 1) * 25 +
+    keyNumberCount * 4 +
+    noticeCount * 5 +
+    lengthSeconds;
+
+  return `${formatDuration(Math.max(60, estimatedSeconds - 20))} ~ ${formatDuration(estimatedSeconds + 30)}`;
+}
+
+function getCurrentProcessingStage(settings: FlowExecutionSettings | null) {
+  const languageNames = getLanguageNames(settings);
+  const languageText = formatList(languageNames);
+
+  if (!languageText) {
+    return "번역 초안을 생성하고 원문과 번역본의 수치/조건을 대조하고 있습니다.";
+  }
+
+  return `${languageText} 번역 초안을 생성하고 원문과 번역본의 수치/조건을 대조하고 있습니다.`;
+}
+
 function getDocumentStructure(input: FlowInput | null) {
   // 백엔드 document_structure를 3페이지 "문서 구조 분석" 카드에 맞는 형태로 정리한다.
   // 구조 분석 값이 비어 있으면 파일명/포함 정보/주의 문구 분석 결과로 fallback한다.
@@ -92,6 +166,29 @@ function getDocumentStructure(input: FlowInput | null) {
   };
 }
 
+function getSourceText(input: FlowInput | null) {
+  if (!input) return "";
+  if (input.analysisResponse?.text) return input.analysisResponse.text;
+  if (input.mode === "text") return input.text;
+
+  return "";
+}
+
+function dedupeTermMatches(matches: FinanceTermMatch[]) {
+  const seenTerms = new Set<string>();
+
+  return matches.filter((match) => {
+    const termKey = match.term_ko.trim().replace(/\s+/g, "");
+
+    if (!termKey || seenTerms.has(termKey)) {
+      return false;
+    }
+
+    seenTerms.add(termKey);
+    return true;
+  });
+}
+
 export function StepThreeProcessing({
   onBack,
   onNext,
@@ -99,14 +196,23 @@ export function StepThreeProcessing({
   settings,
 }: StepThreeProcessingProps) {
   const [ready, setReady] = useState(false);
+  const [termMatches, setTermMatches] = useState<FinanceTermMatch[]>([]);
+  const [isLoadingTerms, setIsLoadingTerms] = useState(false);
+  const [hasLoadedTerms, setHasLoadedTerms] = useState(false);
+  const [termError, setTermError] = useState("");
   // 아래 값들은 1페이지 분석 결과와 2페이지 실행 설정을 조합해 만든 3페이지 표시용 데이터다.
   const completedDescription = getCompletedDescription(input);
   const nextTaskDescription = getNextTaskDescription(settings);
   const documentStructure = getDocumentStructure(input);
   const keyNumbers = input?.analysisResponse?.analysis.key_numbers_preview ?? [];
+  const sourceText = getSourceText(input);
   const languageNames = getLanguageNames(settings);
+  const selectedTermLanguages = getSelectedTermLanguages(settings);
+  const estimatedProcessingTime = getEstimatedProcessingTime(settings, input);
+  const currentProcessingStage = getCurrentProcessingStage(settings);
   const statusLanguageLabel =
     languageNames.length > 0 ? `${formatList(languageNames)} 번역 준비 중` : "번역 준비 중";
+  const shouldWaitForTermMatches = Boolean(sourceText.trim()) && !hasLoadedTerms;
 
   useEffect(() => {
     // 현재는 실제 번역 API가 없으므로 짧은 처리 대기 후 다음 단계 버튼을 활성화한다.
@@ -114,6 +220,101 @@ export function StepThreeProcessing({
     const timer = window.setTimeout(() => setReady(true), 900);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!sourceText.trim()) {
+      setTermMatches([]);
+      setHasLoadedTerms(true);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadFinanceTerms() {
+      setIsLoadingTerms(true);
+      setHasLoadedTerms(false);
+      setTermError("");
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/finance-terms/search`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: sourceText,
+            top: 12,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          throw new Error(error?.detail || "금융용어 매칭에 실패했습니다.");
+        }
+
+        const data = await response.json();
+        setTermMatches(dedupeTermMatches(data.matches ?? []));
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setTermError(
+          error instanceof Error
+            ? error.message
+            : "금융용어 매칭 중 오류가 발생했습니다."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingTerms(false);
+          setHasLoadedTerms(true);
+        }
+      }
+    }
+
+    loadFinanceTerms();
+
+    return () => controller.abort();
+  }, [sourceText]);
+
+  if (shouldWaitForTermMatches) {
+    return (
+      <div className="mx-auto max-w-[980px] px-10 py-16">
+        <section className="rounded-xl border border-amber-100 bg-amber-50 p-10 shadow-sm">
+          <div className="flex items-start gap-7">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-amber-200 bg-white text-amber-600">
+              <Sparkles size={28} />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-[30px] font-black tracking-tight text-slate-950">
+                금융용어를 매칭하고 있습니다
+              </h1>
+              <p className="mt-4 max-w-[720px] text-[16px] font-medium leading-8 text-slate-700">
+                업로드한 원문에서 실제로 등장한 금융용어를 찾고, 선택한 대상 언어의 표준 표현만 정리하고 있습니다.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <StatusPill color="amber" label="AI Search 금융용어집 검색 중" />
+                <StatusPill color="blue" label={statusLanguageLabel} />
+              </div>
+              <p className="mt-7 flex items-center gap-3 text-[15px] font-bold text-slate-600">
+                <Clock3 size={20} className="animate-pulse text-amber-600" />
+                매칭이 끝나면 중간 산출물 화면으로 자동 이동합니다.
+              </p>
+              {isLoadingTerms && (
+                <div className="mt-8 h-2 overflow-hidden rounded-full bg-white">
+                  <div className="h-full w-2/3 animate-pulse rounded-full bg-amber-500" />
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+        <button
+          onClick={onBack}
+          className="mt-6 h-11 rounded-lg border border-slate-200 px-5 text-[14px] font-extrabold text-slate-700"
+        >
+          이전으로
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1480px] px-10 py-4">
@@ -135,11 +336,18 @@ export function StepThreeProcessing({
                 <StatusPill color="amber" label="금융용어 표준 표현 적용 중" />
                 <StatusPill color="blue" label={statusLanguageLabel} />
               </div>
-              <p className="mt-6 flex items-center gap-3 text-[16px] font-bold text-slate-800">
-                <Clock3 size={22} className="text-slate-500" />
-                예상 완료 시간
-                <span className="text-[18px] font-black text-red-600">약 1분 30초</span>
-              </p>
+              <div className="mt-6 rounded-lg border border-slate-200 bg-white px-5 py-4">
+                <div className="flex flex-wrap items-center gap-3 text-[15px] font-bold text-slate-800">
+                  <Clock3 size={21} className="text-slate-500" />
+                  처리 예상 시간
+                  <span className="text-[18px] font-black text-red-600">
+                    {estimatedProcessingTime}
+                  </span>
+                </div>
+                <p className="mt-2 text-[14px] font-semibold leading-6 text-slate-600">
+                  {currentProcessingStage}
+                </p>
+              </div>
             </div>
           </div>
           <AiCube compact />
@@ -194,14 +402,50 @@ export function StepThreeProcessing({
               </p>
             </PreviewCard>
             <PreviewCard title="금융용어 매칭" tone="amber">
-              {terminologyMatches.map(([ko, en]) => (
-                <div key={ko} className="grid grid-cols-[82px_20px_1fr] py-1">
-                  <b>{ko}</b>
-                  <span>→</span>
-                  <span>{en}</span>
-                </div>
-              ))}
-              <p className="mt-5 text-right font-bold text-slate-600">총 12건 매칭 완료</p>
+              {isLoadingTerms ? (
+                <p className="text-slate-500">AI Search에서 금융용어를 매칭하고 있습니다.</p>
+              ) : termError ? (
+                <p className="text-red-600">{termError}</p>
+              ) : termMatches.length > 0 ? (
+                <>
+                  <div className="max-h-[260px] space-y-3 overflow-y-auto pr-1">
+                    {termMatches.slice(0, 6).map((term) => (
+                      <div key={term.id} className="border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
+                        <div className="grid grid-cols-[82px_20px_1fr] gap-1">
+                          <b className="text-slate-950">{term.term_ko}</b>
+                          <span className="text-amber-600">→</span>
+                          <span>
+                            {selectedTermLanguages.length === 1
+                              ? term[selectedTermLanguages[0].field] || "-"
+                              : selectedTermLanguages.length > 1
+                                ? `${selectedTermLanguages.length}개 언어 매칭`
+                                : "-"}
+                          </span>
+                        </div>
+                        {selectedTermLanguages.length > 1 && (
+                          <div className="mt-2 grid grid-cols-1 gap-1 text-[13px] leading-6 text-slate-500">
+                            {selectedTermLanguages.map((language) => (
+                              <span key={language.field}>
+                                {language.label} {term[language.field] || "-"}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {term.description && (
+                          <p className="mt-2 text-[13px] leading-6 text-slate-600">
+                            {term.description}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-5 text-right font-bold text-slate-600">
+                    총 {termMatches.length}건 매칭 완료
+                  </p>
+                </>
+              ) : (
+                <p className="text-slate-500">매칭된 금융용어가 없습니다.</p>
+              )}
             </PreviewCard>
             <PreviewCard title="핵심 수치 검수 대상" tone="green">
               {keyNumbers.length > 0 ? (

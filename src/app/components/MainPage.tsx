@@ -46,6 +46,7 @@ export function MainPage() {
         <StepFourReview
           onBack={() => setStep(3)}
           onNext={() => setStep(5)}
+          input={flowInput}
         />
       )}
       {step === 5 && <StepFiveReport onBack={() => setStep(4)} />}

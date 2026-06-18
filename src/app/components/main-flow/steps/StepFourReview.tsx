@@ -10,16 +10,26 @@ import {
   Globe2,
   Info,
 } from "lucide-react";
-import { originalSummaryRows } from "../flowData";
 import { BottomBar } from "../shared/BottomBar";
+import type { FlowInput, KeyNumberPreview } from "../types";
 
 export function StepFourReview({
   onBack,
   onNext,
+  input,
 }: {
   onBack: () => void;
   onNext: () => void;
+  input: FlowInput | null;
 }) {
+  const analysis = input?.analysisResponse?.analysis;
+  const keyNumbers = analysis?.key_numbers_preview ?? [];
+  const includedInformation = analysis?.included_information ?? [];
+  const sourceTitle =
+    input?.mode === "file"
+      ? input.fileName
+      : analysis?.document_structure?.title || "입력 텍스트";
+
   return (
     <div className="mx-auto max-w-[1480px] px-12 py-7">
       <div className="flex items-start justify-between">
@@ -45,14 +55,13 @@ export function StepFourReview({
             원문 핵심 정보
             <Info size={17} className="text-slate-400" />
           </h2>
-          <div className="mt-8 space-y-0">
-            {originalSummaryRows.map(([label, value]) => (
-              <div key={label} className="grid grid-cols-[140px_1fr] border-b border-slate-100 py-4 text-[15px]">
-                <b className="text-slate-950">{label}</b>
-                <span className="whitespace-pre-line font-medium leading-7 text-slate-700">{value}</span>
-              </div>
-            ))}
-          </div>
+          <p className="mt-2 truncate text-[13px] font-bold text-slate-500">
+            {sourceTitle}
+          </p>
+          <OriginalKeyInfo
+            keyNumbers={keyNumbers}
+            includedInformation={includedInformation}
+          />
           <button className="mt-9 flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-slate-200 text-[15px] font-extrabold text-slate-700">
             <FileText size={18} />
             원문 전체 보기
@@ -153,6 +162,69 @@ function ResultSection({ title, children }: { title: string; children: ReactNode
     <div className="border-b border-slate-100 py-4">
       <h4 className="font-black text-slate-950">{title}</h4>
       <p className="mt-1">{children}</p>
+    </div>
+  );
+}
+
+function OriginalKeyInfo({
+  keyNumbers,
+  includedInformation,
+}: {
+  keyNumbers: KeyNumberPreview[];
+  includedInformation: string[];
+}) {
+  if (keyNumbers.length > 0) {
+    return (
+      <div className="mt-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[13px] font-extrabold text-slate-500">핵심 수치</p>
+          <span className="rounded-full bg-red-50 px-3 py-1 text-[12px] font-extrabold text-red-600">
+            {keyNumbers.length}건 추출
+          </span>
+        </div>
+        <div className="max-h-[510px] space-y-3 overflow-y-auto pr-1">
+          {keyNumbers.map((item, index) => (
+            <div
+              key={`${item.label}-${item.value}-${index}`}
+              className="rounded-lg border border-slate-200 bg-white p-4"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-[14px] font-black text-slate-950">{item.label}</p>
+                <p className="max-w-[170px] text-right text-[15px] font-black leading-6 text-red-600">
+                  {item.value}
+                </p>
+              </div>
+              {item.source_text && (
+                <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-[12px] font-semibold leading-5 text-slate-600">
+                  {item.source_text}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6">
+      <p className="text-[13px] font-extrabold text-slate-500">감지된 정보</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {includedInformation.length > 0 ? (
+          includedInformation.slice(0, 10).map((item) => (
+            <span
+              key={item}
+              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[13px] font-bold text-slate-700"
+            >
+              {item}
+            </span>
+          ))
+        ) : (
+          <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-[14px] font-bold text-slate-500">
+            원문에서 확인된 핵심 수치가 없습니다.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
