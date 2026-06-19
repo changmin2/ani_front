@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
   CheckCircle2,
@@ -89,6 +89,64 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
   // 대상 언어는 2페이지에서 고른 첫 번째 언어를 사용한다. (예: "베트남어 (Tiếng Việt)")
   const targetLanguages = settings?.targetLanguages ?? [];
   const targetLanguage = targetLanguages[0] ?? "영어 (English)";
+
+  // '디자인 적용 미리보기'용: 원본 PDF 첫 페이지를 선택 언어로 번역한 PNG 미리보기.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+
+  useEffect(() => {
+    if (!originalPdf) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+
+    async function loadPreview() {
+      setIsLoadingPreview(true);
+      setPreviewError("");
+      setPreviewUrl(null);
+
+      try {
+        const formData = new FormData();
+        formData.append("file", originalPdf!);
+        formData.append("target_language", targetLanguage);
+
+        const response = await fetch(`${API_BASE_URL}/documents/translate-layout/preview`, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          throw new Error(error?.detail || "미리보기 생성에 실패했습니다.");
+        }
+
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewUrl(objectUrl);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setPreviewError(
+          error instanceof Error ? error.message : "미리보기 생성 중 오류가 발생했습니다."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingPreview(false);
+        }
+      }
+    }
+
+    loadPreview();
+
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [originalPdf, targetLanguage]);
 
   const downloadTranslatedPdf = async () => {
     if (!originalPdf || isDownloadingPdf) return;
@@ -293,7 +351,41 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
             ))}
           </div>
 
-          <TemplatePreview template={selectedTemplate} />
+          <div className="mt-6">
+            {!originalPdf ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center">
+                <FileText size={36} className="text-slate-300" />
+                <p className="max-w-[320px] text-[14px] font-semibold text-slate-500">
+                  원본 첫 페이지 번역 미리보기는 PDF 원본을 업로드한 경우에만 지원됩니다.
+                </p>
+              </div>
+            ) : isLoadingPreview ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-6 py-20 text-center shadow-sm">
+                <LoaderCircle size={32} className="animate-spin text-red-500" />
+                <p className="text-[14px] font-bold text-slate-600">
+                  번역 미리보기를 생성하고 있습니다...
+                </p>
+                <p className="text-[12px] font-medium text-slate-400">
+                  원본 레이아웃에 {targetLanguage} 번역을 적용하는 중
+                </p>
+              </div>
+            ) : previewError ? (
+              <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-6 py-16 text-center">
+                <p className="text-[14px] font-bold text-red-600">{previewError}</p>
+              </div>
+            ) : previewUrl ? (
+              <div>
+                <p className="mb-4 text-center text-[12px] font-extrabold uppercase tracking-wide text-slate-400">
+                  원본 첫 페이지 · {targetLanguage} 번역 적용
+                </p>
+                <img
+                  src={previewUrl}
+                  alt="원본 첫 페이지 번역 미리보기"
+                  className="mx-auto max-w-full rounded-lg border border-slate-200 shadow-[0_20px_45px_rgba(15,23,42,0.15)]"
+                />
+              </div>
+            ) : null}
+          </div>
 
           <div className="relative -mt-4 rounded-xl border border-slate-200 bg-white p-5 shadow-lg">
             <div className="mb-3 flex items-center justify-between">
