@@ -1,4 +1,4 @@
-import type { ElementType, ReactNode } from "react";
+import { useEffect, useState, type ElementType } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -11,7 +11,7 @@ import {
   Info,
 } from "lucide-react";
 import { BottomBar } from "../shared/BottomBar";
-import type { FlowInput, KeyNumberPreview, TranslationResult } from "../types";
+import type { FlowInput, KeyNumberPreview, TranslationByLanguage, TranslationResult } from "../types";
 
 export function StepFourReview({
   onBack,
@@ -24,7 +24,21 @@ export function StepFourReview({
   input: FlowInput | null;
   translationResult: TranslationResult | null;
 }) {
-  const selectedTranslation = translationResult?.translations[0];
+  const [editableTranslations, setEditableTranslations] = useState<TranslationByLanguage[]>(
+    translationResult?.translations ?? []
+  );
+  const [selectedLanguageCode, setSelectedLanguageCode] = useState(
+    translationResult?.translations[0]?.language_code ?? ""
+  );
+  const [isEditing, setIsEditing] = useState(false);
+  const translations = editableTranslations;
+  const selectedTranslation =
+    translations.find((translation) => translation.language_code === selectedLanguageCode) ??
+    translations[0] ??
+    null;
+  const orderedSections = [...(selectedTranslation?.sections ?? [])].sort(
+    (first, second) => first.order - second.order
+  );
   const analysis = input?.analysisResponse?.analysis;
   const keyNumbers = analysis?.key_numbers_preview ?? [];
   const includedInformation = analysis?.included_information ?? [];
@@ -32,6 +46,83 @@ export function StepFourReview({
     input?.mode === "file"
       ? input.fileName
       : analysis?.document_structure?.title || "입력 텍스트";
+
+  useEffect(() => {
+    setEditableTranslations(translationResult?.translations ?? []);
+    setIsEditing(false);
+  }, [translationResult]);
+
+  useEffect(() => {
+    if (translations.length === 0) return;
+
+    const hasSelectedLanguage = translations.some(
+      (translation) => translation.language_code === selectedLanguageCode
+    );
+
+    if (!hasSelectedLanguage) {
+      setSelectedLanguageCode(translations[0].language_code);
+    }
+  }, [selectedLanguageCode, translations]);
+
+  const updateSelectedTranslation = (
+    updater: (translation: TranslationByLanguage) => TranslationByLanguage
+  ) => {
+    if (!selectedTranslation) return;
+
+    setEditableTranslations((currentTranslations) =>
+      currentTranslations.map((translation) =>
+        translation.language_code === selectedTranslation.language_code
+          ? updater(translation)
+          : translation
+      )
+    );
+  };
+
+  const updateSelectedTranslationField = (
+    field: "title" | "summary",
+    value: string
+  ) => {
+    updateSelectedTranslation((translation) => ({
+      ...translation,
+      [field]: value,
+      full_text: buildTranslationText({
+        ...translation,
+        [field]: value,
+      }),
+    }));
+  };
+
+  const updateSelectedSection = (
+    sectionId: string,
+    order: number,
+    field: "translated_label" | "translated_text",
+    value: string
+  ) => {
+    updateSelectedTranslation((translation) => {
+      const nextTranslation = {
+        ...translation,
+        sections: translation.sections.map((section) =>
+          section.id === sectionId && section.order === order
+            ? {
+                ...section,
+                [field]: value,
+              }
+            : section
+        ),
+      };
+
+      return {
+        ...nextTranslation,
+        full_text: buildTranslationText(nextTranslation),
+      };
+    });
+  };
+
+  const copySelectedTranslation = () => {
+    if (!selectedTranslation) return;
+
+    navigator.clipboard?.writeText(selectedTranslation.full_text || buildTranslationText(selectedTranslation));
+  };
 
   return (
     <div className="mx-auto max-w-[1480px] px-12 py-7">
@@ -73,54 +164,141 @@ export function StepFourReview({
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-7 shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-5">
-            <div className="flex items-center gap-4">
-              <h2 className="text-[19px] font-black text-slate-950">번역 결과</h2>
-              <Globe2 size={18} className="text-violet-700" />
-              <button className="flex items-center gap-2 rounded-full bg-violet-100 px-4 py-1.5 text-[13px] font-extrabold text-violet-700">
-                영어 (English)
-                <ChevronDown size={15} />
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <button className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-4 text-[13px] font-extrabold text-slate-700">
-                <Edit3 size={15} />
-                직접 수정
-              </button>
-              <button className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-4 text-[13px] font-extrabold text-slate-700">
-                <Copy size={15} />
-                복사
-              </button>
+          <div className="border-b border-slate-100 pb-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-[19px] font-black text-slate-950">번역 결과</h2>
+                  <Globe2 size={18} className="text-violet-700" />
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[12px] font-extrabold text-slate-600">
+                    {translations.length}개 언어
+                  </span>
+                </div>
+                <div className="mt-4 flex max-w-full gap-2 overflow-x-auto pb-1">
+                  {translations.length > 0 ? (
+                    translations.map((translation) => (
+                      <button
+                        key={translation.language_code || translation.language}
+                        onClick={() => setSelectedLanguageCode(translation.language_code)}
+                        className={[
+                          "h-9 shrink-0 rounded-lg border px-4 text-[13px] font-extrabold transition",
+                          selectedTranslation?.language_code === translation.language_code
+                            ? "border-violet-500 bg-violet-50 text-violet-700"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                        ].join(" ")}
+                      >
+                        {translation.language}
+                      </button>
+                    ))
+                  ) : (
+                    <span className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-[13px] font-bold text-slate-500">
+                      생성된 번역 결과가 없습니다
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  onClick={() => setIsEditing((current) => !current)}
+                  disabled={!selectedTranslation}
+                  className={[
+                    "flex h-9 items-center gap-2 rounded-lg border px-4 text-[13px] font-extrabold",
+                    isEditing
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 text-slate-700",
+                    !selectedTranslation ? "cursor-not-allowed opacity-50" : "",
+                  ].join(" ")}
+                >
+                  <Edit3 size={15} />
+                  {isEditing ? "수정 완료" : "직접 수정"}
+                </button>
+                <button
+                  onClick={copySelectedTranslation}
+                  className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-4 text-[13px] font-extrabold text-slate-700"
+                >
+                  <Copy size={15} />
+                  복사
+                </button>
+              </div>
             </div>
           </div>
 
-          <article className="max-h-[540px] overflow-hidden pr-5 text-[16px] leading-7 text-slate-700">
-            <h3 className="mt-7 text-[18px] font-black text-slate-950">
-              {selectedTranslation?.title || "BNK The Convenient Time Deposit"}
-            </h3>
-            <p className="mt-3">
-              A time deposit product that helps you grow your assets with stable interest benefits and reliable deposit protection.
-            </p>
-            <hr className="my-5 border-slate-200" />
-            <ResultSection title="Eligibility">Individuals and sole proprietors</ResultSection>
-            <ResultSection title="Term">6 months / 12 months / 24 months / 36 months</ResultSection>
-            <div className="grid grid-cols-2 gap-8 border-b border-slate-100 py-4">
-              <ResultSection title="Base Interest Rate">3.20% p.a.</ResultSection>
-              <ResultSection title="Preferential Interest Rate">Up to 0.50%p</ResultSection>
-            </div>
-            <ResultSection title="Deposit Protection">
-              Protected up to KRW 50 million per depositor under the Deposit Insurance Act.
-            </ResultSection>
-            <ResultSection title="Early Withdrawal">
-              Interest rates may vary depending on the term.
-            </ResultSection>
-            <ResultSection title="Preferential Conditions">
-              • Payroll transfer
-              <br />
-              • Card usage performance
-              <br />
-              • Automatic transfer
-            </ResultSection>
+          <article className="max-h-[540px] overflow-y-auto pr-5 text-[16px] leading-7 text-slate-700">
+            {selectedTranslation ? (
+              <>
+                {isEditing ? (
+                  <div className="mt-7 space-y-4">
+                    <label className="block">
+                      <span className="text-[13px] font-black text-slate-500">번역 제목</span>
+                      <input
+                        value={selectedTranslation.title}
+                        onChange={(event) =>
+                          updateSelectedTranslationField("title", event.target.value)
+                        }
+                        className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-[16px] font-black text-slate-950 outline-none focus:border-violet-400"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[13px] font-black text-slate-500">요약 문장</span>
+                      <textarea
+                        value={selectedTranslation.summary}
+                        onChange={(event) =>
+                          updateSelectedTranslationField("summary", event.target.value)
+                        }
+                        className="mt-2 min-h-24 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-[15px] leading-7 text-slate-700 outline-none focus:border-violet-400"
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <>
+                    <h3 className="mt-7 text-[18px] font-black text-slate-950">
+                      {selectedTranslation.title || "제목 없음"}
+                    </h3>
+                    {selectedTranslation.summary && (
+                      <p className="mt-3 text-slate-700">{selectedTranslation.summary}</p>
+                    )}
+                  </>
+                )}
+                <hr className="my-5 border-slate-200" />
+                {orderedSections.length > 0 ? (
+                  orderedSections.map((section) =>
+                    isEditing ? (
+                      <EditableResultSection
+                        key={`${selectedTranslation.language_code}-${section.id}-${section.order}`}
+                        title={section.translated_label || section.source_label || `Section ${section.order}`}
+                        sourceLabel={section.source_label}
+                        sourceText={section.source_text}
+                        translatedLabel={section.translated_label}
+                        translatedText={section.translated_text}
+                        onLabelChange={(value) =>
+                          updateSelectedSection(section.id, section.order, "translated_label", value)
+                        }
+                        onTextChange={(value) =>
+                          updateSelectedSection(section.id, section.order, "translated_text", value)
+                        }
+                      />
+                    ) : (
+                      <ResultSection
+                        key={`${selectedTranslation.language_code}-${section.id}-${section.order}`}
+                        title={section.translated_label || section.source_label || `Section ${section.order}`}
+                        sourceLabel={section.source_label}
+                        sourceText={section.source_text}
+                      >
+                        {section.translated_text || "-"}
+                      </ResultSection>
+                    )
+                  )
+                ) : (
+                  <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-[14px] font-bold text-slate-500">
+                    표시할 번역 섹션이 없습니다.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="mt-7 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-[14px] font-bold text-slate-500">
+                번역 결과가 아직 전달되지 않았습니다.
+              </p>
+            )}
           </article>
         </section>
 
@@ -160,11 +338,92 @@ export function StepFourReview({
   );
 }
 
-function ResultSection({ title, children }: { title: string; children: ReactNode }) {
+function buildTranslationText(translation: TranslationByLanguage) {
+  const sectionText = [...translation.sections]
+    .sort((first, second) => first.order - second.order)
+    .map((section) => `${section.translated_label || section.source_label}\n${section.translated_text}`)
+    .join("\n\n");
+
+  return [translation.title, translation.summary, sectionText].filter(Boolean).join("\n\n");
+}
+
+function ResultSection({
+  title,
+  sourceLabel,
+  sourceText,
+  children,
+}: {
+  title: string;
+  sourceLabel?: string;
+  sourceText?: string;
+  children: string;
+}) {
   return (
     <div className="border-b border-slate-100 py-4">
-      <h4 className="font-black text-slate-950">{title}</h4>
-      <p className="mt-1">{children}</p>
+      <div className="flex items-start justify-between gap-4">
+        <h4 className="font-black text-slate-950">{title}</h4>
+        {sourceLabel && (
+          <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-extrabold text-slate-500">
+            원문: {sourceLabel}
+          </span>
+        )}
+      </div>
+      <p className="mt-2 whitespace-pre-line">{children}</p>
+      {sourceText && (
+        <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-[12px] font-semibold leading-5 text-slate-500">
+          {sourceText}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function EditableResultSection({
+  sourceLabel,
+  sourceText,
+  translatedLabel,
+  translatedText,
+  onLabelChange,
+  onTextChange,
+}: {
+  title: string;
+  sourceLabel?: string;
+  sourceText?: string;
+  translatedLabel: string;
+  translatedText: string;
+  onLabelChange: (value: string) => void;
+  onTextChange: (value: string) => void;
+}) {
+  return (
+    <div className="border-b border-slate-100 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <label className="min-w-0 flex-1">
+          <span className="text-[12px] font-black text-slate-500">섹션 제목</span>
+          <input
+            value={translatedLabel}
+            onChange={(event) => onLabelChange(event.target.value)}
+            className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 text-[15px] font-black text-slate-950 outline-none focus:border-violet-400"
+          />
+        </label>
+        {sourceLabel && (
+          <span className="mt-7 shrink-0 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-extrabold text-slate-500">
+            원문: {sourceLabel}
+          </span>
+        )}
+      </div>
+      <label className="mt-3 block">
+        <span className="text-[12px] font-black text-slate-500">번역 본문</span>
+        <textarea
+          value={translatedText}
+          onChange={(event) => onTextChange(event.target.value)}
+          className="mt-2 min-h-28 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-[15px] leading-7 text-slate-700 outline-none focus:border-violet-400"
+        />
+      </label>
+      {sourceText && (
+        <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-[12px] font-semibold leading-5 text-slate-500">
+          {sourceText}
+        </p>
+      )}
     </div>
   );
 }

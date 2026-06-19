@@ -14,13 +14,12 @@ import { formatFileSize } from "../analyzeInput";
 import { FeatureStrip } from "../shared/FeatureStrip";
 import lingoLogo from "@/assets/images/lingo_logo.png";
 import monitorImage from "@/assets/images/monitor-shadow-microsoft-white.png";
+import { getApiBaseUrl } from "../../../api";
 import type { FlowInput } from "../types";
 
 type InputMode = "file" | "text";
 
-// 백엔드 FastAPI 서버 주소. 개발 환경에서는 localhost:8000을 사용한다.
-// 나중에 배포 환경을 붙이면 env 값으로 분리하면 된다.
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = getApiBaseUrl();
 
 export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }) {
   const [mode, setMode] = useState<InputMode>("file");

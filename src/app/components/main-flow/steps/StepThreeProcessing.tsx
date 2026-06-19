@@ -11,9 +11,10 @@ import {
 } from "lucide-react";
 import { AiCube } from "../shared/AiCube";
 import { BottomBar } from "../shared/BottomBar";
+import { getApiBaseUrl } from "../../../api";
 import type { FlowExecutionSettings, FlowInput, TranslationResult } from "../types";
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = getApiBaseUrl();
 
 type FinanceTermMatch = {
   id: string;
