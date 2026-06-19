@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   CheckCircle2,
@@ -27,21 +27,19 @@ type StepFiveReportProps = {
   settings: FlowExecutionSettings | null;
 };
 
-const channels = [
-  { label: "모바일 앱 공지", icon: Smartphone, selected: true },
-  { label: "홈페이지 안내", icon: Monitor, selected: true },
-  { label: "영업점 게시문", icon: Layers, selected: true },
-  { label: "SNS 카드뉴스", icon: Globe2, selected: false },
-  { label: "배너", icon: FileText, selected: false },
-];
+// 게시 채널 1개 = 디자인 템플릿 1개 = 미리보기 탭 1개로 1:1 대응시킨 통합 모델.
+// 1번(채널)에서 선택한 항목만 2번(템플릿)·3번(탭)에 노출되고, 2번↔3번 선택은 activeKey로 동기화된다.
+const CHANNELS = [
+  { key: "web", channelLabel: "홈페이지 안내", icon: Monitor, templateTitle: "홈페이지 카드형", templateSub: "Web Card", tabLabel: "홈페이지" },
+  { key: "mobile", channelLabel: "모바일 앱 공지", icon: Smartphone, templateTitle: "모바일 공지형", templateSub: "App Notice", tabLabel: "모바일 앱 공지" },
+  { key: "branch", channelLabel: "영업점 게시문", icon: Layers, templateTitle: "영업점 게시문형", templateSub: "Branch Poster", tabLabel: "영업점 게시문" },
+  { key: "sns", channelLabel: "SNS 카드뉴스", icon: Globe2, templateTitle: "SNS 카드뉴스형", templateSub: "SNS Card", tabLabel: "SNS 카드뉴스" },
+  { key: "banner", channelLabel: "배너", icon: FileText, templateTitle: "배너형", templateSub: "Banner", tabLabel: "배너" },
+] as const;
 
-const templates = [
-  { title: "홈페이지 카드형", sub: "Web Card", selected: true },
-  { title: "모바일 공지형", sub: "App Notice" },
-  { title: "영업점 게시문형", sub: "Branch Poster" },
-  { title: "SNS 카드뉴스형", sub: "SNS Card" },
-  { title: "배너형", sub: "Banner" },
-];
+type ChannelKey = (typeof CHANNELS)[number]["key"];
+
+const DEFAULT_SELECTED_KEYS: ChannelKey[] = ["web", "mobile", "branch"];
 
 const copySlots = [
   ["메인 타이틀", "권장 20자 이내", "Stable savings with BNK", "21/24"],
@@ -72,8 +70,6 @@ const deviceOptions = [
   { id: "pc", icon: Monitor },
 ] as const;
 
-const previewTabs = ["홈페이지", "모바일 앱 공지", "영업점 게시문"];
-
 export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps) {
   // 레이아웃 보존 번역 PDF 다운로드 상태.
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
@@ -86,33 +82,46 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
     input.file.name.toLowerCase().endsWith(".pdf")
       ? input.file
       : null;
-  // 대상 언어는 2페이지에서 고른 첫 번째 언어를 사용한다. (예: "베트남어 (Tiếng Việt)")
+  // 2페이지에서 고른 대상 언어들. 미리보기/다운로드는 이 중 사용자가 선택한 언어를 따른다.
   const targetLanguages = settings?.targetLanguages ?? [];
-  const targetLanguage = targetLanguages[0] ?? "영어 (English)";
+  const [previewLanguage, setPreviewLanguage] = useState(
+    targetLanguages[0] ?? "영어 (English)"
+  );
 
-  // '디자인 적용 미리보기'용: 원본 PDF 첫 페이지를 선택 언어로 번역한 PNG 미리보기.
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // '디자인 적용 미리보기': 원본 PDF 첫 페이지를 언어별로 번역한 PNG.
+  // 언어별 결과를 캐싱해 탭 전환 시 재번역 없이 즉시 보여준다.
+  const [previewCache, setPreviewCache] = useState<Record<string, string>>({});
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const previewUrl = previewCache[previewLanguage] ?? null;
+
+  // 언마운트 시 캐싱된 blob URL을 모두 해제한다. (최신 캐시를 ref로 미러링)
+  const previewCacheRef = useRef(previewCache);
+  previewCacheRef.current = previewCache;
+  useEffect(() => {
+    return () => {
+      Object.values(previewCacheRef.current).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
 
   useEffect(() => {
-    if (!originalPdf) {
-      setPreviewUrl(null);
+    if (!originalPdf) return;
+    // 이미 캐싱된 언어면 다시 요청하지 않는다.
+    if (previewCache[previewLanguage]) {
+      setPreviewError("");
       return;
     }
 
     const controller = new AbortController();
-    let objectUrl: string | null = null;
 
     async function loadPreview() {
       setIsLoadingPreview(true);
       setPreviewError("");
-      setPreviewUrl(null);
 
       try {
         const formData = new FormData();
         formData.append("file", originalPdf!);
-        formData.append("target_language", targetLanguage);
+        formData.append("target_language", previewLanguage);
 
         const response = await fetch(`${API_BASE_URL}/documents/translate-layout/preview`, {
           method: "POST",
@@ -126,8 +135,8 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
         }
 
         const blob = await response.blob();
-        objectUrl = URL.createObjectURL(blob);
-        setPreviewUrl(objectUrl);
+        const objectUrl = URL.createObjectURL(blob);
+        setPreviewCache((prev) => ({ ...prev, [previewLanguage]: objectUrl }));
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setPreviewError(
@@ -142,11 +151,8 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
 
     loadPreview();
 
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [originalPdf, targetLanguage]);
+    return () => controller.abort();
+  }, [originalPdf, previewLanguage, previewCache]);
 
   const downloadTranslatedPdf = async () => {
     if (!originalPdf || isDownloadingPdf) return;
@@ -157,7 +163,7 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
     try {
       const formData = new FormData();
       formData.append("file", originalPdf);
-      formData.append("target_language", targetLanguage);
+      formData.append("target_language", previewLanguage);
 
       const response = await fetch(`${API_BASE_URL}/documents/translate-layout`, {
         method: "POST",
@@ -188,26 +194,31 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
     }
   };
 
-  // 게시 채널: 다중 선택(토글)
-  const [channelList, setChannelList] = useState(channels);
-  const selectedChannelCount = channelList.filter((channel) => channel.selected).length;
-  const toggleChannel = (label: string) =>
-    setChannelList((prev) =>
-      prev.map((channel) =>
-        channel.label === label ? { ...channel, selected: !channel.selected } : channel
-      )
-    );
-
-  // 디자인 템플릿: 단일 선택
-  const [selectedTemplate, setSelectedTemplate] = useState(
-    templates.find((template) => template.selected)?.title ?? templates[0].title
-  );
-
+  // 1번 게시 채널: 다중 선택. 여기서 고른 채널만 2번 템플릿/3번 탭에 노출된다.
+  const [selectedKeys, setSelectedKeys] = useState<ChannelKey[]>(DEFAULT_SELECTED_KEYS);
+  // 2번 템플릿 ↔ 3번 탭 공통 단일 선택 키 (둘이 같은 상태를 공유해 자동 동기화).
+  const [activeKey, setActiveKey] = useState<ChannelKey>(DEFAULT_SELECTED_KEYS[0]);
   // 미리보기 디바이스: 단일 선택
   const [device, setDevice] = useState<(typeof deviceOptions)[number]["id"]>("pc");
 
-  // 미리보기 채널 탭: 단일 선택
-  const [activeTab, setActiveTab] = useState(0);
+  // CHANNELS 순서를 유지하며 선택된 채널만 추린다. (2번/3번이 공통으로 사용)
+  const selectedChannels = CHANNELS.filter((channel) => selectedKeys.includes(channel.key));
+
+  const toggleChannel = (key: ChannelKey) => {
+    setSelectedKeys((prev) => {
+      const next = prev.includes(key)
+        ? prev.filter((selected) => selected !== key)
+        : [...prev, key];
+
+      // 활성 항목이 해제되면 남은 선택 중 첫 번째로 활성 키를 옮긴다.
+      if (!next.includes(activeKey)) {
+        const fallback = CHANNELS.find((channel) => next.includes(channel.key));
+        if (fallback) setActiveKey(fallback.key);
+      }
+
+      return next;
+    });
+  };
 
   return (
     <div className="mx-auto max-w-[1480px] px-8 py-6">
@@ -222,8 +233,8 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
         </div>
         <div className="grid grid-cols-4 gap-4">
           <MetricCard icon={CheckCircle2} title="검토 완료" value="" color="emerald" />
-          <MetricCard icon={Globe2} title="대상 언어" value={targetLanguage} color="blue" />
-          <MetricCard icon={Layers} title="게시 채널" value="4개 선택" color="indigo" />
+          <MetricCard icon={Globe2} title="대상 언어" value={previewLanguage} color="blue" />
+          <MetricCard icon={Layers} title="게시 채널" value={`${selectedKeys.length}개 선택`} color="indigo" />
           <MetricCard icon={FileText} title="생성 문안" value="4종" color="slate" />
         </div>
       </div>
@@ -232,27 +243,28 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
         <aside className="space-y-4">
           <Panel title="1 게시 채널 선택" trailing={<X size={16} className="text-slate-400" />}>
             <div className="space-y-4">
-              {channelList.map((channel) => {
+              {CHANNELS.map((channel) => {
                 const Icon = channel.icon;
+                const isSelected = selectedKeys.includes(channel.key);
                 return (
                   <button
-                    key={channel.label}
+                    key={channel.key}
                     type="button"
-                    onClick={() => toggleChannel(channel.label)}
+                    onClick={() => toggleChannel(channel.key)}
                     className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-left transition hover:bg-slate-50"
                   >
                     <span className="flex items-center gap-3 text-[15px] font-extrabold text-slate-950">
                       <span
                         className={[
                           "flex h-5 w-5 items-center justify-center rounded border",
-                          channel.selected
+                          isSelected
                             ? "border-red-600 bg-red-600 text-white"
                             : "border-slate-300 bg-white",
                         ].join(" ")}
                       >
-                        {channel.selected && <Check size={14} />}
+                        {isSelected && <Check size={14} />}
                       </span>
-                      {channel.label}
+                      {channel.channelLabel}
                     </span>
                     <Icon size={18} className="text-slate-500" />
                   </button>
@@ -260,47 +272,53 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
               })}
             </div>
             <p className="mt-4 border-t border-slate-100 pt-3 text-right text-[13px] font-semibold text-slate-500">
-              선택된 채널 {selectedChannelCount}/{channelList.length}
+              선택된 채널 {selectedKeys.length}/{CHANNELS.length}
             </p>
           </Panel>
 
           <Panel title="2 디자인 템플릿 선택">
             <div className="space-y-2">
-              {templates.map((template, index) => {
-                const isSelected = selectedTemplate === template.title;
-                return (
-                  <button
-                    key={template.title}
-                    type="button"
-                    onClick={() => setSelectedTemplate(template.title)}
-                    className={[
-                      "flex w-full items-center gap-4 rounded-lg border p-3 text-left transition",
-                      isSelected
-                        ? "border-red-500 bg-red-50"
-                        : "border-slate-200 bg-white hover:border-slate-300",
-                    ].join(" ")}
-                  >
-                    <div className="h-14 w-14 rounded border border-slate-200 bg-gradient-to-br from-white to-red-50 shadow-sm">
-                      <div className="m-2 h-2 rounded bg-red-500" />
-                      <div className="mx-2 mt-2 h-2 rounded bg-slate-200" />
-                      <div className="mx-2 mt-1 h-2 rounded bg-slate-200" />
-                      {index === 0 && <div className="mx-2 mt-2 h-4 rounded bg-red-100" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[14px] font-extrabold text-slate-950">{template.title}</p>
-                      <p className="mt-1 text-[12px] font-medium text-slate-500">{template.sub}</p>
-                    </div>
-                    <span
+              {selectedChannels.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-[13px] font-semibold text-slate-400">
+                  먼저 게시 채널을 선택하세요.
+                </p>
+              ) : (
+                selectedChannels.map((channel, index) => {
+                  const isSelected = activeKey === channel.key;
+                  return (
+                    <button
+                      key={channel.key}
+                      type="button"
+                      onClick={() => setActiveKey(channel.key)}
                       className={[
-                        "flex h-5 w-5 items-center justify-center rounded-full border",
-                        isSelected ? "border-red-600 bg-red-600 text-white" : "border-slate-300",
+                        "flex w-full items-center gap-4 rounded-lg border p-3 text-left transition",
+                        isSelected
+                          ? "border-red-500 bg-red-50"
+                          : "border-slate-200 bg-white hover:border-slate-300",
                       ].join(" ")}
                     >
-                      {isSelected && <Check size={12} />}
-                    </span>
-                  </button>
-                );
-              })}
+                      <div className="h-14 w-14 rounded border border-slate-200 bg-gradient-to-br from-white to-red-50 shadow-sm">
+                        <div className="m-2 h-2 rounded bg-red-500" />
+                        <div className="mx-2 mt-2 h-2 rounded bg-slate-200" />
+                        <div className="mx-2 mt-1 h-2 rounded bg-slate-200" />
+                        {index === 0 && <div className="mx-2 mt-2 h-4 rounded bg-red-100" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] font-extrabold text-slate-950">{channel.templateTitle}</p>
+                        <p className="mt-1 text-[12px] font-medium text-slate-500">{channel.templateSub}</p>
+                      </div>
+                      <span
+                        className={[
+                          "flex h-5 w-5 items-center justify-center rounded-full border",
+                          isSelected ? "border-red-600 bg-red-600 text-white" : "border-slate-300",
+                        ].join(" ")}
+                      >
+                        {isSelected && <Check size={12} />}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </Panel>
         </aside>
@@ -333,23 +351,51 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
             </div>
           </div>
 
-          <div className="flex gap-12 border-b border-slate-100 text-[14px] font-extrabold">
-            {previewTabs.map((tab, index) => (
+          <div className="flex flex-wrap gap-x-12 gap-y-2 border-b border-slate-100 text-[14px] font-extrabold">
+            {selectedChannels.map((channel) => (
               <button
-                key={tab}
+                key={channel.key}
                 type="button"
-                onClick={() => setActiveTab(index)}
+                onClick={() => setActiveKey(channel.key)}
                 className={[
                   "px-1 pb-3 transition",
-                  activeTab === index
+                  activeKey === channel.key
                     ? "border-b-2 border-red-600 text-red-600"
                     : "text-slate-800 hover:text-slate-950",
                 ].join(" ")}
               >
-                {tab}
+                {channel.tabLabel}
               </button>
             ))}
           </div>
+
+          {originalPdf && targetLanguages.length > 0 && (
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <span className="mr-1 flex items-center gap-1.5 text-[13px] font-extrabold text-slate-500">
+                <Globe2 size={15} />
+                번역 언어
+              </span>
+              {targetLanguages.map((language) => {
+                const isActive = previewLanguage === language;
+                return (
+                  <button
+                    key={language}
+                    type="button"
+                    onClick={() => setPreviewLanguage(language)}
+                    title={language}
+                    className={[
+                      "rounded-full border px-4 py-1.5 text-[13px] font-extrabold transition",
+                      isActive
+                        ? "border-red-500 bg-red-50 text-red-600"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                    ].join(" ")}
+                  >
+                    {language.split(" ")[0]}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <div className="mt-6">
             {!originalPdf ? (
@@ -366,7 +412,7 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
                   번역 미리보기를 생성하고 있습니다...
                 </p>
                 <p className="text-[12px] font-medium text-slate-400">
-                  원본 레이아웃에 {targetLanguage} 번역을 적용하는 중
+                  원본 레이아웃에 {previewLanguage} 번역을 적용하는 중
                 </p>
               </div>
             ) : previewError ? (
@@ -376,7 +422,7 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
             ) : previewUrl ? (
               <div>
                 <p className="mb-4 text-center text-[12px] font-extrabold uppercase tracking-wide text-slate-400">
-                  원본 첫 페이지 · {targetLanguage} 번역 적용
+                  원본 첫 페이지 · {previewLanguage} 번역 적용
                 </p>
                 <img
                   src={previewUrl}
