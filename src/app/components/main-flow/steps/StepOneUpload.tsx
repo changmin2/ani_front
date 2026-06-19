@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowRight,
   FileText,
+  LoaderCircle,
   PencilLine,
   PlayCircle,
   ShieldCheck,
@@ -32,6 +33,7 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
 
   const hasInput = mode === "file" ? Boolean(selectedFile) : text.trim().length > 0;
   const canSubmit = hasInput && !isAnalyzing;
+  const shouldAnimateFlow = hasInput;
 
   const submit = async () => {
     // 이미 분석 중이면 중복 요청을 막는다. 파일 업로드/OCR은 시간이 걸릴 수 있다.
@@ -328,12 +330,18 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
               disabled={!hasInput || isAnalyzing}
               className={[
                 "mt-5 flex h-12 w-full items-center justify-center gap-3 rounded-lg text-[18px] font-extrabold shadow-[0_8px_18px_rgba(220,0,0,0.22)] transition",
-                hasInput && !isAnalyzing
-                  ? "bg-red-600 text-white hover:bg-red-700"
+                hasInput
+                  ? isAnalyzing
+                    ? "cursor-wait bg-red-600 text-white"
+                    : "bg-red-600 text-white hover:bg-red-700"
                   : "cursor-not-allowed bg-slate-200 text-slate-400 shadow-none",
               ].join(" ")}
             >
-              <PlayCircle size={22} />
+              {isAnalyzing ? (
+                <LoaderCircle className="animate-spin" size={22} />
+              ) : (
+                <PlayCircle size={22} />
+              )}
               {isAnalyzing ? "문서 분석 중" : "분석 시작"}
             </button>
           </div>
@@ -361,7 +369,7 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
                   className="h-[7px] w-[7px] rounded-full"
                   initial={false}
                   animate={
-                    canSubmit
+                    shouldAnimateFlow
                       ? {
                           backgroundColor: [
                             "#cbd5e1",
@@ -374,7 +382,7 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
                       : { backgroundColor: "#cbd5e1" }
                   }
                   transition={
-                    canSubmit
+                    shouldAnimateFlow
                       ? {
                           duration: 2.4,
                           ease: "linear",
@@ -395,7 +403,7 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
               ].join(" ")}
               initial={false}
               animate={
-                canSubmit
+                shouldAnimateFlow
                   ? {
                       color: [
                         "#cbd5e1",
@@ -408,7 +416,7 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
                   : { color: "#cbd5e1" }
               }
               transition={
-                canSubmit
+                shouldAnimateFlow
                   ? {
                       duration: 2.4,
                       ease: "linear",
