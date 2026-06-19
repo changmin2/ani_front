@@ -27,14 +27,14 @@ type StepFiveReportProps = {
   settings: FlowExecutionSettings | null;
 };
 
-// 게시 채널 1개 = 디자인 템플릿 1개 = 미리보기 탭 1개로 1:1 대응시킨 통합 모델.
-// 1번(채널)에서 선택한 항목만 2번(템플릿)·3번(탭)에 노출되고, 2번↔3번 선택은 activeKey로 동기화된다.
+// 게시 채널 = 출력 규격(1:1). 채널을 고르면 실제 PDF 첫 페이지를 이 width×height 캔버스에
+// 비율 유지로 맞춰(여백 흰색) 변환해 보여준다.
 const CHANNELS = [
-  { key: "web", channelLabel: "홈페이지 안내", icon: Monitor, templateTitle: "홈페이지 카드형", templateSub: "Web Card", tabLabel: "홈페이지" },
-  { key: "mobile", channelLabel: "모바일 앱 공지", icon: Smartphone, templateTitle: "모바일 공지형", templateSub: "App Notice", tabLabel: "모바일 앱 공지" },
-  { key: "branch", channelLabel: "영업점 게시문", icon: Layers, templateTitle: "영업점 게시문형", templateSub: "Branch Poster", tabLabel: "영업점 게시문" },
-  { key: "sns", channelLabel: "SNS 카드뉴스", icon: Globe2, templateTitle: "SNS 카드뉴스형", templateSub: "SNS Card", tabLabel: "SNS 카드뉴스" },
-  { key: "banner", channelLabel: "배너", icon: FileText, templateTitle: "배너형", templateSub: "Banner", tabLabel: "배너" },
+  { key: "web", channelLabel: "홈페이지", icon: Monitor, dimension: "1080 × 1920", width: 1080, height: 1920 },
+  { key: "mobile", channelLabel: "모바일 앱 공지", icon: Smartphone, dimension: "1080 × 1920", width: 1080, height: 1920 },
+  { key: "branch", channelLabel: "영업점 게시문", icon: Layers, dimension: "A4 1240 × 1754", width: 1240, height: 1754 },
+  { key: "sns", channelLabel: "SNS 카드뉴스", icon: Globe2, dimension: "1080 × 1080", width: 1080, height: 1080 },
+  { key: "banner", channelLabel: "배너", icon: FileText, dimension: "1200 × 300", width: 1200, height: 300 },
 ] as const;
 
 type ChannelKey = (typeof CHANNELS)[number]["key"];
@@ -49,21 +49,6 @@ const copySlots = [
   ["법적 고지 문구", "권장 80자 이내", "Terms and conditions may apply.", "28/80"],
 ];
 
-// 미리보기에 공통으로 쓰이는 게시 콘텐츠(현재는 목업 문안).
-// 추후 4페이지의 실제 번역 결과로 교체하면 모든 템플릿에 자동 반영된다.
-const previewContent = {
-  brand: "BNK",
-  title: "BNK Time Deposit",
-  headline: "Stable savings with clear interest benefits.",
-  sub: "Enjoy preferential rates and reliable deposit protection.",
-  baseRateLabel: "Base Interest Rate",
-  baseRate: "3.20%",
-  baseRateNote: "p.a.",
-  prefRateLabel: "Preferential Rate",
-  prefRate: "Up to 0.50%p",
-  cta: "Learn more",
-};
-
 const deviceOptions = [
   { id: "mobile", icon: Smartphone },
   { id: "tablet", icon: Tablet },
@@ -73,6 +58,7 @@ const deviceOptions = [
 export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps) {
   // 레이아웃 보존 번역 PDF 다운로드 상태.
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingImage, setIsDownloadingImage] = useState(false);
   const [downloadError, setDownloadError] = useState("");
 
   // 레이아웃 보존 번역은 현재 PDF 원본만 지원(백엔드 프로토타입).
@@ -82,77 +68,11 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
     input.file.name.toLowerCase().endsWith(".pdf")
       ? input.file
       : null;
-  // 2페이지에서 고른 대상 언어들. 미리보기/다운로드는 이 중 사용자가 선택한 언어를 따른다.
+  // 2페이지에서 고른 대상 언어들. 미리보기/다운로드는 사용자가 선택한 언어를 따른다.
   const targetLanguages = settings?.targetLanguages ?? [];
   const [previewLanguage, setPreviewLanguage] = useState(
     targetLanguages[0] ?? "영어 (English)"
   );
-
-  // '디자인 적용 미리보기': 원본 PDF 첫 페이지를 언어별로 번역한 PNG.
-  // 언어별 결과를 캐싱해 탭 전환 시 재번역 없이 즉시 보여준다.
-  const [previewCache, setPreviewCache] = useState<Record<string, string>>({});
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-  const [previewError, setPreviewError] = useState("");
-  const previewUrl = previewCache[previewLanguage] ?? null;
-
-  // 언마운트 시 캐싱된 blob URL을 모두 해제한다. (최신 캐시를 ref로 미러링)
-  const previewCacheRef = useRef(previewCache);
-  previewCacheRef.current = previewCache;
-  useEffect(() => {
-    return () => {
-      Object.values(previewCacheRef.current).forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!originalPdf) return;
-    // 이미 캐싱된 언어면 다시 요청하지 않는다.
-    if (previewCache[previewLanguage]) {
-      setPreviewError("");
-      return;
-    }
-
-    const controller = new AbortController();
-
-    async function loadPreview() {
-      setIsLoadingPreview(true);
-      setPreviewError("");
-
-      try {
-        const formData = new FormData();
-        formData.append("file", originalPdf!);
-        formData.append("target_language", previewLanguage);
-
-        const response = await fetch(`${API_BASE_URL}/documents/translate-layout/preview`, {
-          method: "POST",
-          body: formData,
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => null);
-          throw new Error(error?.detail || "미리보기 생성에 실패했습니다.");
-        }
-
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        setPreviewCache((prev) => ({ ...prev, [previewLanguage]: objectUrl }));
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setPreviewError(
-          error instanceof Error ? error.message : "미리보기 생성 중 오류가 발생했습니다."
-        );
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoadingPreview(false);
-        }
-      }
-    }
-
-    loadPreview();
-
-    return () => controller.abort();
-  }, [originalPdf, previewLanguage, previewCache]);
 
   const downloadTranslatedPdf = async () => {
     if (!originalPdf || isDownloadingPdf) return;
@@ -194,15 +114,83 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
     }
   };
 
-  // 1번 게시 채널: 다중 선택. 여기서 고른 채널만 2번 템플릿/3번 탭에 노출된다.
+  // 1번 게시 채널: 다중 선택. 채널 = 출력 규격(1:1).
   const [selectedKeys, setSelectedKeys] = useState<ChannelKey[]>(DEFAULT_SELECTED_KEYS);
-  // 2번 템플릿 ↔ 3번 탭 공통 단일 선택 키 (둘이 같은 상태를 공유해 자동 동기화).
+  // 미리보기 중인 채널(2번 강조 + 3번 미리보기 대상).
   const [activeKey, setActiveKey] = useState<ChannelKey>(DEFAULT_SELECTED_KEYS[0]);
   // 미리보기 디바이스: 단일 선택
   const [device, setDevice] = useState<(typeof deviceOptions)[number]["id"]>("pc");
 
-  // CHANNELS 순서를 유지하며 선택된 채널만 추린다. (2번/3번이 공통으로 사용)
+  // CHANNELS 순서를 유지하며 선택된 채널만 추린다.
   const selectedChannels = CHANNELS.filter((channel) => selectedKeys.includes(channel.key));
+  const activeChannel = CHANNELS.find((channel) => channel.key === activeKey) ?? CHANNELS[0];
+
+  // 실제 PDF 첫 페이지를 활성 채널 규격으로 변환한 PNG. (채널+언어)별 캐싱.
+  const [pdfPreviewCache, setPdfPreviewCache] = useState<Record<string, string>>({});
+  const [isLoadingPdfPreview, setIsLoadingPdfPreview] = useState(false);
+  const [pdfPreviewError, setPdfPreviewError] = useState("");
+  const previewCacheKey = `${activeKey}|${previewLanguage}`;
+  const pdfPreviewUrl = pdfPreviewCache[previewCacheKey] ?? null;
+
+  const pdfPreviewCacheRef = useRef(pdfPreviewCache);
+  pdfPreviewCacheRef.current = pdfPreviewCache;
+  useEffect(() => {
+    return () => {
+      Object.values(pdfPreviewCacheRef.current).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!originalPdf) return;
+    if (pdfPreviewCache[previewCacheKey]) {
+      setPdfPreviewError("");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadPdfPreview() {
+      setIsLoadingPdfPreview(true);
+      setPdfPreviewError("");
+
+      try {
+        const formData = new FormData();
+        formData.append("file", originalPdf!);
+        formData.append("target_language", previewLanguage);
+        // 활성 채널 규격(width×height)에 맞춰 변환(여백 fit).
+        formData.append("width", String(activeChannel.width));
+        formData.append("height", String(activeChannel.height));
+
+        const response = await fetch(`${API_BASE_URL}/documents/translate-layout/preview`, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          throw new Error(error?.detail || "미리보기 생성에 실패했습니다.");
+        }
+
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        setPdfPreviewCache((prev) => ({ ...prev, [previewCacheKey]: objectUrl }));
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setPdfPreviewError(
+          error instanceof Error ? error.message : "미리보기 중 오류가 발생했습니다."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingPdfPreview(false);
+        }
+      }
+    }
+
+    loadPdfPreview();
+
+    return () => controller.abort();
+  }, [originalPdf, previewLanguage, activeChannel.width, activeChannel.height, previewCacheKey, pdfPreviewCache]);
 
   const toggleChannel = (key: ChannelKey) => {
     setSelectedKeys((prev) => {
@@ -218,6 +206,48 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
 
       return next;
     });
+  };
+
+  // PDF 전체 페이지를 선택 채널 규격으로 변환해 세로로 이어붙인 PNG 한 장으로 다운로드.
+  const downloadDesignImage = async () => {
+    if (!originalPdf || isDownloadingImage) return;
+
+    setIsDownloadingImage(true);
+    setDownloadError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", originalPdf);
+      formData.append("target_language", previewLanguage);
+      formData.append("width", String(activeChannel.width));
+      formData.append("height", String(activeChannel.height));
+
+      const response = await fetch(`${API_BASE_URL}/documents/translate-layout/images`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.detail || "이미지 생성에 실패했습니다.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${activeChannel.channelLabel}_${previewLanguage.split(" ")[0]}_${activeChannel.width}x${activeChannel.height}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setDownloadError(
+        error instanceof Error ? error.message : "이미지 다운로드 중 오류가 발생했습니다."
+      );
+    } finally {
+      setIsDownloadingImage(false);
+    }
   };
 
   return (
@@ -276,45 +306,49 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
             </p>
           </Panel>
 
-          <Panel title="2 디자인 템플릿 선택">
+          <Panel title="2 디자인 규격 선택">
             <div className="space-y-2">
               {selectedChannels.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-[13px] font-semibold text-slate-400">
                   먼저 게시 채널을 선택하세요.
                 </p>
               ) : (
-                selectedChannels.map((channel, index) => {
-                  const isSelected = activeKey === channel.key;
+                selectedChannels.map((channel) => {
+                  const isActive = activeKey === channel.key;
+                  const Icon = channel.icon;
                   return (
                     <button
                       key={channel.key}
                       type="button"
                       onClick={() => setActiveKey(channel.key)}
                       className={[
-                        "flex w-full items-center gap-4 rounded-lg border p-3 text-left transition",
-                        isSelected
+                        "flex w-full items-center gap-3 rounded-lg border p-3 text-left transition",
+                        isActive
                           ? "border-red-500 bg-red-50"
                           : "border-slate-200 bg-white hover:border-slate-300",
                       ].join(" ")}
                     >
-                      <div className="h-14 w-14 rounded border border-slate-200 bg-gradient-to-br from-white to-red-50 shadow-sm">
-                        <div className="m-2 h-2 rounded bg-red-500" />
-                        <div className="mx-2 mt-2 h-2 rounded bg-slate-200" />
-                        <div className="mx-2 mt-1 h-2 rounded bg-slate-200" />
-                        {index === 0 && <div className="mx-2 mt-2 h-4 rounded bg-red-100" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[14px] font-extrabold text-slate-950">{channel.templateTitle}</p>
-                        <p className="mt-1 text-[12px] font-medium text-slate-500">{channel.templateSub}</p>
-                      </div>
                       <span
                         className={[
-                          "flex h-5 w-5 items-center justify-center rounded-full border",
-                          isSelected ? "border-red-600 bg-red-600 text-white" : "border-slate-300",
+                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                          isActive ? "bg-red-600 text-white" : "bg-slate-100 text-slate-500",
                         ].join(" ")}
                       >
-                        {isSelected && <Check size={12} />}
+                        <Icon size={18} />
                       </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[14px] font-extrabold text-slate-950">
+                          {channel.channelLabel}
+                        </span>
+                        <span className="block text-[12px] font-medium text-slate-500">
+                          {channel.dimension}
+                        </span>
+                      </span>
+                      {isActive && (
+                        <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                          미리보기 중
+                        </span>
+                      )}
                     </button>
                   );
                 })
@@ -351,25 +385,7 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-x-12 gap-y-2 border-b border-slate-100 text-[14px] font-extrabold">
-            {selectedChannels.map((channel) => (
-              <button
-                key={channel.key}
-                type="button"
-                onClick={() => setActiveKey(channel.key)}
-                className={[
-                  "px-1 pb-3 transition",
-                  activeKey === channel.key
-                    ? "border-b-2 border-red-600 text-red-600"
-                    : "text-slate-800 hover:text-slate-950",
-                ].join(" ")}
-              >
-                {channel.tabLabel}
-              </button>
-            ))}
-          </div>
-
-          {originalPdf && targetLanguages.length > 0 && (
+          {targetLanguages.length > 0 && (
             <div className="mt-5 flex flex-wrap items-center gap-2">
               <span className="mr-1 flex items-center gap-1.5 text-[13px] font-extrabold text-slate-500">
                 <Globe2 size={15} />
@@ -398,37 +414,54 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
           )}
 
           <div className="mt-6">
-            {!originalPdf ? (
+            {selectedChannels.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center">
+                <Layers size={36} className="text-slate-300" />
+                <p className="max-w-[320px] text-[14px] font-semibold text-slate-500">
+                  게시 채널을 선택하면 규격별 미리보기가 표시됩니다.
+                </p>
+              </div>
+            ) : !originalPdf ? (
               <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-16 text-center">
                 <FileText size={36} className="text-slate-300" />
-                <p className="max-w-[320px] text-[14px] font-semibold text-slate-500">
-                  원본 첫 페이지 번역 미리보기는 PDF 원본을 업로드한 경우에만 지원됩니다.
+                <p className="max-w-[340px] text-[14px] font-semibold text-slate-500">
+                  규격별 미리보기는 PDF 원본을 업로드한 경우에만 지원됩니다.
                 </p>
               </div>
-            ) : isLoadingPreview ? (
+            ) : isLoadingPdfPreview && !pdfPreviewUrl ? (
               <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-6 py-20 text-center shadow-sm">
                 <LoaderCircle size={32} className="animate-spin text-red-500" />
-                <p className="text-[14px] font-bold text-slate-600">
-                  번역 미리보기를 생성하고 있습니다...
-                </p>
+                <p className="text-[14px] font-bold text-slate-600">미리보기를 생성하고 있습니다...</p>
                 <p className="text-[12px] font-medium text-slate-400">
-                  원본 레이아웃에 {previewLanguage} 번역을 적용하는 중
+                  {activeChannel.channelLabel} 규격에 {previewLanguage.split(" ")[0]} 번역 적용 중
                 </p>
               </div>
-            ) : previewError ? (
+            ) : pdfPreviewError ? (
               <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-6 py-16 text-center">
-                <p className="text-[14px] font-bold text-red-600">{previewError}</p>
+                <p className="text-[14px] font-bold text-red-600">{pdfPreviewError}</p>
               </div>
-            ) : previewUrl ? (
+            ) : pdfPreviewUrl ? (
               <div>
                 <p className="mb-4 text-center text-[12px] font-extrabold uppercase tracking-wide text-slate-400">
-                  원본 첫 페이지 · {previewLanguage} 번역 적용
+                  {activeChannel.channelLabel} · {activeChannel.dimension} · {previewLanguage.split(" ")[0]} 번역 적용
                 </p>
-                <img
-                  src={previewUrl}
-                  alt="원본 첫 페이지 번역 미리보기"
-                  className="mx-auto max-w-full rounded-lg border border-slate-200 shadow-[0_20px_45px_rgba(15,23,42,0.15)]"
-                />
+                {activeKey === "mobile" ? (
+                  // 모바일 채널은 폰 프레임으로 감싸 휴대폰 느낌을 준다.
+                  <div className="relative mx-auto w-full max-w-[320px] rounded-[44px] border-[10px] border-slate-900 bg-slate-900 shadow-[0_24px_50px_rgba(15,23,42,0.3)]">
+                    <div className="absolute left-1/2 top-0 z-10 h-6 w-32 -translate-x-1/2 rounded-b-2xl bg-slate-900" />
+                    <img
+                      src={pdfPreviewUrl}
+                      alt={`${activeChannel.channelLabel} 규격 미리보기`}
+                      className="block w-full rounded-[34px] bg-white"
+                    />
+                  </div>
+                ) : (
+                  <img
+                    src={pdfPreviewUrl}
+                    alt={`${activeChannel.channelLabel} 규격 미리보기`}
+                    className="mx-auto max-w-full rounded-lg border border-slate-200 shadow-[0_20px_45px_rgba(15,23,42,0.15)]"
+                  />
+                )}
               </div>
             ) : null}
           </div>
@@ -485,7 +518,14 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
                 },
                 { key: "report", title: "검수 리포트", sub: "(AI 검수 요약)" },
                 { key: "copy", title: "게시 문안", sub: "(선택 채널)" },
-                { key: "image", title: "디자인 적용 이미지", sub: "(고해상도)" },
+                {
+                  key: "image",
+                  title: "디자인 적용 이미지",
+                  sub: `(${activeChannel.channelLabel} 규격 · 전체 페이지 PNG)`,
+                  onClick: downloadDesignImage,
+                  disabled: !originalPdf,
+                  loading: isDownloadingImage,
+                },
               ].map((item) => (
                 <button
                   key={item.key}
@@ -502,7 +542,7 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
                   <span>
                     <span className="block text-[13px] font-extrabold text-slate-950">{item.title}</span>
                     <span className="block text-[12px] font-medium text-slate-500">
-                      {item.loading ? "번역 PDF 생성 중..." : item.sub}
+                      {item.loading ? "생성 중..." : item.sub}
                     </span>
                   </span>
                 </button>
@@ -562,182 +602,7 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
   );
 }
 
-function TemplatePreview({ template }: { template: string }) {
-  const layouts: Record<string, { spec: string; node: React.ReactNode }> = {
-    "모바일 공지형": { spec: "1080 × 1920 · 모바일 화면", node: <MobileNoticePreview /> },
-    "홈페이지 카드형": { spec: "1200 × 628 · 웹 카드", node: <WebCardPreview /> },
-    "영업점 게시문형": { spec: "595 × 842 · A4 포스터", node: <BranchPosterPreview /> },
-    "SNS 카드뉴스형": { spec: "1080 × 1080 · 정사각형", node: <SnsCardPreview /> },
-    "배너형": { spec: "1200 × 300 · 가로 배너", node: <BannerPreview /> },
-  };
-
-  const layout = layouts[template] ?? layouts["모바일 공지형"];
-
-  return (
-    <div className="mt-6">
-      <p className="mb-4 text-center text-[12px] font-extrabold uppercase tracking-wide text-slate-400">
-        {template} · {layout.spec}
-      </p>
-      {layout.node}
-    </div>
-  );
-}
-
 // 두 개의 금리 수치 박스(템플릿 간 공유)
-function RateGrid({ compact }: { compact?: boolean }) {
-  return (
-    <div className="grid grid-cols-2 overflow-hidden rounded-lg bg-white/90 text-center shadow-sm">
-      <div className={compact ? "p-3" : "p-5"}>
-        <p className="text-[13px] font-semibold text-[#061b3a]">{previewContent.baseRateLabel}</p>
-        <p className={`mt-2 font-black text-[#061b3a] ${compact ? "text-[22px]" : "text-[29px]"}`}>
-          {previewContent.baseRate}
-        </p>
-        <p className="text-[13px] font-bold text-[#061b3a]">{previewContent.baseRateNote}</p>
-      </div>
-      <div className={`border-l border-slate-100 ${compact ? "p-3" : "p-5"}`}>
-        <p className="text-[13px] font-semibold text-[#061b3a]">{previewContent.prefRateLabel}</p>
-        <p className={`mt-2 font-black text-[#061b3a] ${compact ? "text-[22px]" : "text-[29px]"}`}>
-          {previewContent.prefRate}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function CtaButton({ className = "" }: { className?: string }) {
-  return (
-    <button className={`flex items-center justify-center gap-2 rounded-lg bg-red-600 font-extrabold text-white ${className}`}>
-      {previewContent.cta}
-      <span>›</span>
-    </button>
-  );
-}
-
-// 1) 모바일 공지형 — 세로 폰 화면
-function MobileNoticePreview() {
-  return (
-    <div className="relative mx-auto max-w-[520px] rounded-[48px] border-[7px] border-slate-200 bg-white p-6 shadow-[0_20px_45px_rgba(15,23,42,0.18)]">
-      <div className="absolute left-1/2 top-0 h-7 w-52 -translate-x-1/2 rounded-b-3xl bg-slate-200" />
-      <div className="mb-5 flex items-center justify-between pt-4 text-[14px] font-bold text-slate-950">
-        <span>9:41</span>
-        <span className="text-[12px]">●●▰</span>
-      </div>
-      <div className="rounded-2xl bg-gradient-to-br from-red-50 via-white to-red-100 p-8">
-        <div className="flex items-center justify-between">
-          <div className="text-[30px] font-black tracking-[-0.04em] text-red-600">{previewContent.brand}</div>
-          <span className="text-slate-600">♧</span>
-        </div>
-        <h3 className="mt-8 text-[27px] font-black leading-tight tracking-tight text-[#061b3a]">
-          {previewContent.title}
-        </h3>
-        <p className="mt-3 text-[18px] font-bold leading-tight text-[#061b3a]">{previewContent.headline}</p>
-        <p className="mt-5 text-[16px] font-medium leading-6 text-[#061b3a]">{previewContent.sub}</p>
-        <div className="mt-8">
-          <RateGrid />
-        </div>
-        <CtaButton className="mt-4 h-12 w-full text-[16px]" />
-      </div>
-    </div>
-  );
-}
-
-// 2) 홈페이지 카드형 — 가로 웹 카드(브라우저 창)
-function WebCardPreview() {
-  return (
-    <div className="mx-auto max-w-[680px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_45px_rgba(15,23,42,0.15)]">
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
-        <span className="h-3 w-3 rounded-full bg-red-400" />
-        <span className="h-3 w-3 rounded-full bg-amber-400" />
-        <span className="h-3 w-3 rounded-full bg-emerald-400" />
-        <span className="ml-3 flex-1 rounded-md bg-white px-3 py-1 text-[12px] font-semibold text-slate-400">
-          www.bnk.co.kr/deposit
-        </span>
-      </div>
-      <div className="grid grid-cols-2 items-center gap-6 bg-gradient-to-br from-red-50 via-white to-red-100 p-8">
-        <div>
-          <div className="text-[26px] font-black tracking-[-0.04em] text-red-600">{previewContent.brand}</div>
-          <h3 className="mt-4 text-[24px] font-black leading-tight tracking-tight text-[#061b3a]">
-            {previewContent.title}
-          </h3>
-          <p className="mt-3 text-[15px] font-medium leading-6 text-[#061b3a]">{previewContent.sub}</p>
-          <CtaButton className="mt-6 h-11 w-44 text-[15px]" />
-        </div>
-        <RateGrid />
-      </div>
-    </div>
-  );
-}
-
-// 3) 영업점 게시문형 — 세로 A4 포스터
-function BranchPosterPreview() {
-  return (
-    <div className="mx-auto max-w-[460px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_20px_45px_rgba(15,23,42,0.15)]">
-      <div className="flex items-center justify-between bg-red-600 px-8 py-5 text-white">
-        <span className="text-[26px] font-black tracking-[-0.04em]">{previewContent.brand}</span>
-        <span className="text-[13px] font-bold opacity-90">상품 안내문</span>
-      </div>
-      <div className="px-9 py-8 text-center">
-        <h3 className="text-[28px] font-black leading-tight tracking-tight text-[#061b3a]">
-          {previewContent.title}
-        </h3>
-        <p className="mt-3 text-[18px] font-bold text-[#061b3a]">{previewContent.headline}</p>
-        <p className="mx-auto mt-4 max-w-[320px] text-[15px] font-medium leading-6 text-slate-600">
-          {previewContent.sub}
-        </p>
-        <div className="mt-8">
-          <RateGrid />
-        </div>
-        <CtaButton className="mx-auto mt-8 h-12 w-56 text-[16px]" />
-        <p className="mt-6 border-t border-slate-100 pt-4 text-[11px] font-medium text-slate-400">
-          ※ 예금자보호법에 따라 1인당 5천만원까지 보호됩니다.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// 4) SNS 카드뉴스형 — 정사각형
-function SnsCardPreview() {
-  return (
-    <div className="mx-auto flex aspect-square max-w-[460px] flex-col justify-between rounded-2xl bg-gradient-to-br from-red-600 via-red-500 to-red-700 p-9 text-white shadow-[0_20px_45px_rgba(220,0,0,0.25)]">
-      <div className="text-[28px] font-black tracking-[-0.04em]">{previewContent.brand}</div>
-      <div>
-        <h3 className="text-[30px] font-black leading-tight tracking-tight">{previewContent.title}</h3>
-        <p className="mt-3 text-[17px] font-bold leading-snug opacity-95">{previewContent.headline}</p>
-      </div>
-      <div className="flex items-end justify-between">
-        <div>
-          <p className="text-[13px] font-semibold opacity-80">{previewContent.baseRateLabel}</p>
-          <p className="text-[34px] font-black leading-none">{previewContent.baseRate}</p>
-        </div>
-        <span className="rounded-full bg-white px-5 py-2 text-[14px] font-extrabold text-red-600">
-          {previewContent.cta}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// 5) 배너형 — 가로 띠배너
-function BannerPreview() {
-  return (
-    <div className="mx-auto flex max-w-[680px] items-center justify-between gap-6 rounded-xl bg-gradient-to-r from-[#061b3a] via-[#0a2a5e] to-red-700 px-8 py-6 text-white shadow-[0_20px_45px_rgba(15,23,42,0.2)]">
-      <div className="min-w-0">
-        <div className="text-[20px] font-black tracking-[-0.04em] text-red-300">{previewContent.brand}</div>
-        <h3 className="mt-1 truncate text-[22px] font-black tracking-tight">{previewContent.title}</h3>
-        <p className="mt-1 text-[14px] font-medium opacity-85">{previewContent.headline}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-5">
-        <div className="text-right">
-          <p className="text-[12px] font-semibold opacity-75">{previewContent.baseRateLabel}</p>
-          <p className="text-[28px] font-black leading-none">{previewContent.baseRate}</p>
-        </div>
-        <CtaButton className="h-11 w-32 text-[15px]" />
-      </div>
-    </div>
-  );
-}
-
 function Panel({
   title,
   children,
