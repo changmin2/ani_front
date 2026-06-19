@@ -94,6 +94,42 @@ export type TranslationResult = {
   translations: TranslationByLanguage[];
 };
 
+// 백엔드 /documents/validation 응답.
+// 검수는 언어별(results[])로 나오며, 각 언어는 정상/주의/오류/검토 요약과 이슈 목록을 가진다.
+export type ValidationIssue = {
+  type: string;
+  status: "normal" | "warning" | "error" | "review" | string;
+  label: string;
+  source_value: string;
+  translated_value?: string;
+  message: string;
+  recommendation?: string;
+};
+
+export type ValidationSummary = {
+  normal: number;
+  warning: number;
+  error: number;
+  review: number;
+};
+
+export type LanguageValidation = {
+  // en/vi/zh/kk 코드
+  targetLanguage: string;
+  translatedText: string;
+  validationResult: {
+    summary: ValidationSummary;
+    issues: ValidationIssue[];
+    is_valid: boolean;
+    score: number;
+    recommended_translation: string;
+  };
+};
+
+export type ValidationResult = {
+  results: LanguageValidation[];
+};
+
 export type FlowExecutionSettings = {
   // 2페이지에서 사용자가 최종 확정한 실행 설정.
   // 3페이지가 선택 언어/검수 기준에 맞춰 진행 문구를 만드는 데 사용한다.

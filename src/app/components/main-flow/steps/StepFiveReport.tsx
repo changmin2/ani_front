@@ -8,6 +8,7 @@ import {
   Globe2,
   Info,
   Layers,
+  LoaderCircle,
   Monitor,
   Save,
   ShieldCheck,
@@ -15,9 +16,15 @@ import {
   Tablet,
   X,
 } from "lucide-react";
+import { getApiBaseUrl } from "../../../api";
+import type { FlowExecutionSettings, FlowInput } from "../types";
+
+const API_BASE_URL = getApiBaseUrl();
 
 type StepFiveReportProps = {
   onBack: () => void;
+  input: FlowInput | null;
+  settings: FlowExecutionSettings | null;
 };
 
 const channels = [
@@ -67,7 +74,62 @@ const deviceOptions = [
 
 const previewTabs = ["모바일 앱 공지", "홈페이지 안내", "영업점 게시문"];
 
-export function StepFiveReport({ onBack }: StepFiveReportProps) {
+export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps) {
+  // 레이아웃 보존 번역 PDF 다운로드 상태.
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+
+  // 레이아웃 보존 번역은 현재 PDF 원본만 지원(백엔드 프로토타입).
+  const originalPdf =
+    input?.mode === "file" &&
+    input.file &&
+    input.file.name.toLowerCase().endsWith(".pdf")
+      ? input.file
+      : null;
+  // 대상 언어는 2페이지에서 고른 첫 번째 언어를 사용한다. (예: "베트남어 (Tiếng Việt)")
+  const targetLanguages = settings?.targetLanguages ?? [];
+  const targetLanguage = targetLanguages[0] ?? "영어 (English)";
+
+  const downloadTranslatedPdf = async () => {
+    if (!originalPdf || isDownloadingPdf) return;
+
+    setIsDownloadingPdf(true);
+    setDownloadError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", originalPdf);
+      formData.append("target_language", targetLanguage);
+
+      const response = await fetch(`${API_BASE_URL}/documents/translate-layout`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.detail || "번역 PDF 생성에 실패했습니다.");
+      }
+
+      // 응답 PDF(blob)를 받아 브라우저 다운로드를 트리거한다.
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `translated_${originalPdf.name}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setDownloadError(
+        error instanceof Error ? error.message : "다운로드 중 오류가 발생했습니다."
+      );
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   // 게시 채널: 다중 선택(토글)
   const [channelList, setChannelList] = useState(channels);
   const selectedChannelCount = channelList.filter((channel) => channel.selected).length;
@@ -102,7 +164,7 @@ export function StepFiveReport({ onBack }: StepFiveReportProps) {
         </div>
         <div className="grid grid-cols-4 gap-4">
           <MetricCard icon={CheckCircle2} title="검토 완료" value="" color="emerald" />
-          <MetricCard icon={Globe2} title="대상 언어" value="영어 (English)" color="blue" />
+          <MetricCard icon={Globe2} title="대상 언어" value={targetLanguage} color="blue" />
           <MetricCard icon={Layers} title="게시 채널" value="4개 선택" color="indigo" />
           <MetricCard icon={FileText} title="생성 문안" value="4종" color="slate" />
         </div>
@@ -275,20 +337,47 @@ export function StepFiveReport({ onBack }: StepFiveReportProps) {
           <Panel title="5 최종 산출물 및 다운로드">
             <div className="grid grid-cols-2 gap-2">
               {[
-                ["번역 결과", "(전체 문서)"],
-                ["검수 리포트", "(AI 검수 요약)"],
-                ["게시 문안", "(선택 채널)"],
-                ["디자인 적용 이미지", "(고해상도)"],
-              ].map(([title, sub]) => (
-                <button key={title} className="flex h-14 items-center gap-3 rounded-lg border border-slate-200 px-4 text-left">
-                  <Download size={18} className="text-slate-500" />
+                {
+                  key: "translation",
+                  title: "번역 결과",
+                  sub: "(원본 레이아웃 유지 PDF)",
+                  onClick: downloadTranslatedPdf,
+                  disabled: !originalPdf,
+                  loading: isDownloadingPdf,
+                },
+                { key: "report", title: "검수 리포트", sub: "(AI 검수 요약)" },
+                { key: "copy", title: "게시 문안", sub: "(선택 채널)" },
+                { key: "image", title: "디자인 적용 이미지", sub: "(고해상도)" },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={item.onClick}
+                  disabled={item.disabled || item.loading}
+                  className="flex h-14 items-center gap-3 rounded-lg border border-slate-200 px-4 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {item.loading ? (
+                    <LoaderCircle size={18} className="animate-spin text-slate-500" />
+                  ) : (
+                    <Download size={18} className="text-slate-500" />
+                  )}
                   <span>
-                    <span className="block text-[13px] font-extrabold text-slate-950">{title}</span>
-                    <span className="block text-[12px] font-medium text-slate-500">{sub}</span>
+                    <span className="block text-[13px] font-extrabold text-slate-950">{item.title}</span>
+                    <span className="block text-[12px] font-medium text-slate-500">
+                      {item.loading ? "번역 PDF 생성 중..." : item.sub}
+                    </span>
                   </span>
                 </button>
               ))}
             </div>
+            {downloadError && (
+              <p className="mt-2 text-[12px] font-bold text-red-600">{downloadError}</p>
+            )}
+            {!originalPdf && (
+              <p className="mt-2 text-[12px] font-medium text-slate-400">
+                ※ 「번역 결과」 PDF 다운로드는 PDF 원본을 업로드한 경우에만 지원됩니다.
+              </p>
+            )}
 
             <div className="mt-5">
               <p className="mb-3 flex items-center gap-2 text-[15px] font-black text-slate-950">

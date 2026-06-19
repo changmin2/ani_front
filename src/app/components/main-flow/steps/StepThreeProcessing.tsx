@@ -12,7 +12,7 @@ import {
 import { AiCube } from "../shared/AiCube";
 import { BottomBar } from "../shared/BottomBar";
 import { getApiBaseUrl } from "../../../api";
-import type { FlowExecutionSettings, FlowInput, TranslationResult } from "../types";
+import type { FlowExecutionSettings, FlowInput, TranslationResult, ValidationResult } from "../types";
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -35,7 +35,10 @@ type TermLanguage = {
 
 type StepThreeProcessingProps = {
   onBack: () => void;
-  onNext: (translationResult: TranslationResult) => void;
+  onNext: (
+    translationResult: TranslationResult,
+    validationResult: ValidationResult | null
+  ) => void;
   input: FlowInput | null;
   settings: FlowExecutionSettings | null;
 };
@@ -237,6 +240,9 @@ export function StepThreeProcessing({
   const [translationResult, setTranslationResult] = useState<TranslationResult | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationError, setTranslationError] = useState("");
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationError, setValidationError] = useState("");
   const [termMatches, setTermMatches] = useState<FinanceTermMatch[]>([]);
   const [isCompletedDetailOpen, setIsCompletedDetailOpen] = useState(false);
   const [isLoadingTerms, setIsLoadingTerms] = useState(false);
@@ -371,6 +377,70 @@ export function StepThreeProcessing({
     return () => controller.abort();
   }, [hasLoadedTerms, input?.analysisResponse?.analysis, settings?.targetLanguages, settings?.toneStyle, sourceText, termMatches]);
 
+
+  // 번역이 끝나면 자동으로 검수 API를 호출한다. (페이지 로드 → 금융용어 매칭 → 번역 → 검수)
+  // FOUNDRY 설정이 없으면 검수가 실패할 수 있으나, 흐름을 막지 않도록 에러만 보관하고 진행은 허용한다.
+  useEffect(() => {
+    if (!translationResult || translationResult.translations.length === 0) return;
+
+    const controller = new AbortController();
+
+    async function validateTranslations() {
+      setIsValidating(true);
+      setValidationResult(null);
+      setValidationError("");
+
+      try {
+        const keyInformation = (
+          input?.analysisResponse?.analysis.key_numbers_preview ?? []
+        ).map((item) => ({
+          label: item.label,
+          sourceValue: item.value,
+        }));
+
+        const response = await fetch(`${API_BASE_URL}/documents/validation`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            documentType:
+              input?.analysisResponse?.analysis.document_type ?? "금융상품 안내문",
+            sourceText,
+            // language_code는 이미 en/vi/zh/kk 코드라 그대로 사용한다.
+            translations: translationResult!.translations.map((translation) => ({
+              targetLanguage: translation.language_code,
+              translatedText: translation.full_text,
+            })),
+            keyInformation,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          throw new Error(error?.detail || "번역 검수에 실패했습니다.");
+        }
+
+        const data = await response.json();
+        setValidationResult(data);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setValidationError(
+          error instanceof Error ? error.message : "번역 검수 중 오류가 발생했습니다."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsValidating(false);
+        }
+      }
+    }
+
+    validateTranslations();
+
+    return () => controller.abort();
+  }, [translationResult, input?.analysisResponse?.analysis, sourceText]);
+
   if (shouldWaitForTermMatches) {
     return (
       <div className="mx-auto max-w-[980px] px-10 py-16">
@@ -474,8 +544,26 @@ export function StepThreeProcessing({
               }
             />
             <ProcessItem
-              title="다음 작업"
-              desc={nextTaskDescription}
+              active={Boolean(translationResult) && isValidating}
+              done={Boolean(validationResult)}
+              title={
+                validationResult
+                  ? "번역 검수 완료"
+                  : isValidating
+                    ? "번역 검수 중"
+                    : validationError
+                      ? "번역 검수 건너뜀"
+                      : "다음 작업: 번역 검수"
+              }
+              desc={
+                validationError
+                  ? validationError
+                  : validationResult
+                    ? `${validationResult.results.length}개 언어의 번역 검수가 완료되었습니다.`
+                    : isValidating
+                      ? "원문과 번역문의 수치·조건·법적 고지 일치 여부를 검수하고 있습니다."
+                      : nextTaskDescription
+              }
             />
           </div>
           <button className="mt-10 flex h-13 w-full items-center justify-between rounded-lg border border-slate-200 px-5 text-[16px] font-extrabold text-slate-950">
@@ -625,12 +713,18 @@ export function StepThreeProcessing({
         leftLabel="이전으로"
         onBack={onBack}
         helper="입력된 문서는 암호화되어 안전하게 처리되며, 분석 후 자동으로 삭제됩니다."
-        rightLabel={translationResult ? "결과 검토로 이동" : "번역 완료 대기 중"}
+        rightLabel={
+          !translationResult
+            ? "번역 완료 대기 중"
+            : isValidating
+              ? "검수 진행 중..."
+              : "결과 검토로 이동"
+        }
         onNext={() => {
-          if (!translationResult) return;
-          onNext(translationResult);
+          if (!translationResult || isValidating) return;
+          onNext(translationResult, validationResult);
         }}
-        disabled={!translationResult}
+        disabled={!translationResult || isValidating}
         onDisabledClick={() => {
           if (translationError) {
             window.alert(translationError);

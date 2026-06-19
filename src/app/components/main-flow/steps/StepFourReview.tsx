@@ -12,18 +12,20 @@ import {
   X,
 } from "lucide-react";
 import { BottomBar } from "../shared/BottomBar";
-import type { FlowInput, KeyNumberPreview, TranslationByLanguage, TranslationResult } from "../types";
+import type { FlowInput, KeyNumberPreview, TranslationByLanguage, TranslationResult, ValidationIssue, ValidationResult, ValidationSummary } from "../types";
 
 export function StepFourReview({
   onBack,
   onNext,
   input,
   translationResult,
+  validationResult,
 }: {
   onBack: () => void;
   onNext: () => void;
   input: FlowInput | null;
   translationResult: TranslationResult | null;
+  validationResult: ValidationResult | null;
 }) {
   const [editableTranslations, setEditableTranslations] = useState<TranslationByLanguage[]>(
     translationResult?.translations ?? []
@@ -41,6 +43,22 @@ export function StepFourReview({
   const orderedSections = [...(selectedTranslation?.sections ?? [])].sort(
     (first, second) => first.order - second.order
   );
+  // 현재 선택된 언어의 검수 결과를 찾는다. (없으면 첫 번째 결과로 폴백)
+  const selectedValidation =
+    validationResult?.results.find(
+      (result) => result.targetLanguage === selectedLanguageCode
+    ) ??
+    validationResult?.results[0] ??
+    null;
+  const validationSummary: ValidationSummary =
+    selectedValidation?.validationResult.summary ?? {
+      normal: 0,
+      warning: 0,
+      error: 0,
+      review: 0,
+    };
+  const validationIssues = selectedValidation?.validationResult.issues ?? [];
+  const hasValidation = Boolean(validationResult);
   const analysis = input?.analysisResponse?.analysis;
   const keyNumbers = analysis?.key_numbers_preview ?? [];
   const includedInformation = analysis?.included_information ?? [];
@@ -142,10 +160,10 @@ export function StepFourReview({
           </p>
         </div>
         <div className="grid grid-cols-4 gap-4">
-          <ScoreBadge icon={CheckCircle2} title="정상" value="8건" color="emerald" />
-          <ScoreBadge icon={AlertTriangle} title="주의" value="2건" color="amber" />
-          <ScoreBadge icon={AlertTriangle} title="오류" value="0건" color="red" />
-          <ScoreBadge icon={Info} title="검토 필요" value="1건" color="blue" />
+          <ScoreBadge icon={CheckCircle2} title="정상" value={`${validationSummary.normal}건`} color="emerald" />
+          <ScoreBadge icon={AlertTriangle} title="주의" value={`${validationSummary.warning}건`} color="amber" />
+          <ScoreBadge icon={AlertTriangle} title="오류" value={`${validationSummary.error}건`} color="red" />
+          <ScoreBadge icon={Info} title="검토 필요" value={`${validationSummary.review}건`} color="blue" />
         </div>
       </div>
 
@@ -323,17 +341,37 @@ export function StepFourReview({
               검수 기준 보기
             </button>
           </div>
-          <div className="mt-6 space-y-4">
-            <ReviewGroup color="emerald" title="정상 (8)" body="모든 금리, 기간, 보호한도 등이 원문과 일치합니다." />
-            <ReviewGroup
-              color="amber"
-              title="주의 (2)"
-              body="우대금리 조건 표현이 일부 축약되었습니다."
-              detail="우대 조건별 세부 항목(급여이체, 카드 이용실적, 자동이체)이 명확히 드러나지 않았습니다."
-            />
-            <ReviewGroup color="red" title="오류 (0)" body="오류가 발견되지 않았습니다." />
-            <ReviewGroup color="blue" title="검토 필요 (1)" body="마케팅 표현이 과장 광고로 해석될 가능성이 있습니다." />
-          </div>
+          {hasValidation ? (
+            <div className="mt-6 space-y-4">
+              <ReviewGroup
+                color="emerald"
+                title={`정상 (${validationSummary.normal})`}
+                body="원문의 금리·기간·보호한도 등이 번역문에 일치합니다."
+              />
+              <ReviewGroup
+                color="amber"
+                title={`주의 (${validationSummary.warning})`}
+                body="표현이 일부 축약되었거나 보완이 필요한 항목입니다."
+                issues={validationIssues.filter((issue) => issue.status === "warning")}
+              />
+              <ReviewGroup
+                color="red"
+                title={`오류 (${validationSummary.error})`}
+                body="원문과 의미·수치가 어긋난 항목입니다."
+                issues={validationIssues.filter((issue) => issue.status === "error")}
+              />
+              <ReviewGroup
+                color="blue"
+                title={`검토 필요 (${validationSummary.review})`}
+                body="사람의 추가 확인이 필요한 항목입니다."
+                issues={validationIssues.filter((issue) => issue.status === "review")}
+              />
+            </div>
+          ) : (
+            <p className="mt-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-5 text-[14px] font-semibold text-slate-500">
+              검수 결과가 아직 없습니다. 처리 단계에서 검수가 완료되면 여기에 표시됩니다.
+            </p>
+          )}
         </section>
       </div>
 
@@ -681,12 +719,12 @@ function ReviewGroup({
   color,
   title,
   body,
-  detail,
+  issues = [],
 }: {
   color: "emerald" | "amber" | "red" | "blue";
   title: string;
   body: string;
-  detail?: string;
+  issues?: ValidationIssue[];
 }) {
   const styles = {
     emerald: "border-emerald-100 bg-emerald-50 text-emerald-700",
@@ -701,19 +739,41 @@ function ReviewGroup({
         <p className="font-black">{title}</p>
         <ChevronDown size={18} />
       </div>
-      <p className="mt-2 text-[13px] font-semibold text-slate-600">{body}</p>
-      {detail && (
-        <div className="mt-5 border-t border-amber-200 pt-4">
-          <p className="text-[13px] font-semibold leading-6 text-slate-600">{detail}</p>
-          <div className="mt-4 flex gap-3">
-            <button className="rounded-md border border-slate-200 bg-white px-4 py-2 text-[12px] font-extrabold text-slate-700">
-              문장 보기
-            </button>
-            <button className="rounded-md bg-violet-100 px-4 py-2 text-[12px] font-extrabold text-violet-700">
-              수정 제안 적용
-            </button>
-          </div>
+      {issues.length > 0 ? (
+        <div className="mt-3 space-y-3">
+          {issues.map((issue, index) => (
+            <div
+              key={`${issue.label}-${index}`}
+              className="rounded-lg border border-slate-200 bg-white p-4"
+            >
+              <p className="text-[13px] font-black text-slate-950">{issue.label}</p>
+              <p className="mt-2 text-[13px] font-semibold leading-6 text-slate-600">
+                {issue.message}
+              </p>
+              {(issue.source_value || issue.translated_value) && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] font-bold">
+                  {issue.source_value && (
+                    <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
+                      원문: {issue.source_value}
+                    </span>
+                  )}
+                  {issue.translated_value && (
+                    <span className="rounded bg-red-50 px-2 py-1 text-red-600">
+                      번역: {issue.translated_value}
+                    </span>
+                  )}
+                </div>
+              )}
+              {issue.recommendation && (
+                <p className="mt-3 border-t border-slate-100 pt-3 text-[12px] font-semibold leading-6 text-violet-700">
+                  수정 제안: {issue.recommendation}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
+      ) : (
+        <p className="mt-2 text-[13px] font-semibold text-slate-600">{body}</p>
       )}
     </div>
   );
