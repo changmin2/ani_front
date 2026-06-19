@@ -71,6 +71,7 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
           fileName: selectedFile.name,
           fileSize: selectedFile.size,
           fileType: extension,
+          file: selectedFile,
           analysisResponse,
         });
         return;

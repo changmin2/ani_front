@@ -13,6 +13,9 @@ export type FlowInput =
       fileName: string;
       fileSize: number;
       fileType: string;
+      // 4페이지 "원문 전체 보기"에서 원본 파일을 그대로 미리보기하기 위해 File 객체를 보관한다.
+      // MainPage의 React state에만 머무르며 직렬화되지 않으므로 File을 그대로 들고 다녀도 안전하다.
+      file?: File;
       analysisResponse?: DocumentAnalyzeResponse;
     }
   // 1페이지에서 텍스트를 직접 입력한 경우.

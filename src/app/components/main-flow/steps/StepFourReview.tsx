@@ -9,6 +9,7 @@ import {
   FileText,
   Globe2,
   Info,
+  X,
 } from "lucide-react";
 import { BottomBar } from "../shared/BottomBar";
 import type { FlowInput, KeyNumberPreview, TranslationByLanguage, TranslationResult } from "../types";
@@ -31,6 +32,7 @@ export function StepFourReview({
     translationResult?.translations[0]?.language_code ?? ""
   );
   const [isEditing, setIsEditing] = useState(false);
+  const [isOriginalOpen, setIsOriginalOpen] = useState(false);
   const translations = editableTranslations;
   const selectedTranslation =
     translations.find((translation) => translation.language_code === selectedLanguageCode) ??
@@ -46,6 +48,10 @@ export function StepFourReview({
     input?.mode === "file"
       ? input.fileName
       : analysis?.document_structure?.title || "입력 텍스트";
+  const originalFullText =
+    input?.analysisResponse?.text ??
+    (input?.mode === "text" ? input.text : "") ??
+    "";
 
   useEffect(() => {
     setEditableTranslations(translationResult?.translations ?? []);
@@ -156,7 +162,12 @@ export function StepFourReview({
             keyNumbers={keyNumbers}
             includedInformation={includedInformation}
           />
-          <button className="mt-9 flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-slate-200 text-[15px] font-extrabold text-slate-700">
+          <button
+            type="button"
+            onClick={() => setIsOriginalOpen(true)}
+            disabled={!originalFullText}
+            className="mt-9 flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-slate-200 text-[15px] font-extrabold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
             <FileText size={18} />
             원문 전체 보기
             <ChevronRight size={18} />
@@ -334,6 +345,150 @@ export function StepFourReview({
         rightLabel="검토 완료 및 콘텐츠 생성"
         onNext={onNext}
       />
+
+      {isOriginalOpen && (
+        <OriginalDocumentModal
+          title={sourceTitle}
+          fullText={originalFullText}
+          file={input?.mode === "file" ? input.file ?? null : null}
+          onClose={() => setIsOriginalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function OriginalDocumentModal({
+  title,
+  fullText,
+  file,
+  onClose,
+}: {
+  title: string;
+  fullText: string;
+  file: File | null;
+  onClose: () => void;
+}) {
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  // 원본 파일은 blob URL을 만들어 iframe/img로 미리보기한다.
+  // 모달이 닫히면 URL을 해제해 메모리 누수를 막는다.
+  useEffect(() => {
+    if (!file) {
+      setFileUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setFileUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  const fileType = file?.type ?? "";
+  const isImage = fileType.startsWith("image/");
+  const isPdf = fileType === "application/pdf" || (file?.name ?? "").toLowerCase().endsWith(".pdf");
+  const canPreviewFile = Boolean(fileUrl) && (isImage || isPdf);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[88vh] w-full max-w-[1100px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-7 py-5">
+          <div className="min-w-0">
+            <h2 className="flex items-center gap-2 text-[19px] font-black text-slate-950">
+              <FileText size={18} className="text-slate-400" />
+              원문 전체 보기
+            </h2>
+            <p className="mt-1 truncate text-[13px] font-bold text-slate-500">{title}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            aria-label="닫기"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-slate-100 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+          {/* 왼쪽: 원본 파일 미리보기 */}
+          <div className="flex min-h-0 flex-col">
+            <div className="border-b border-slate-100 px-6 py-3 text-[12px] font-extrabold uppercase tracking-wide text-slate-400">
+              원본 파일
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4">
+              {!file ? (
+                <PreviewFallback message="텍스트로 입력된 문서라 원본 파일이 없습니다." />
+              ) : isImage && fileUrl ? (
+                <img src={fileUrl} alt={title} className="mx-auto max-w-full rounded-lg shadow-sm" />
+              ) : isPdf && fileUrl ? (
+                <iframe src={fileUrl} title={title} className="h-[60vh] w-full rounded-lg border border-slate-200 bg-white" />
+              ) : (
+                <PreviewFallback
+                  message="이 형식은 브라우저 미리보기를 지원하지 않습니다. 오른쪽에서 추출된 텍스트를 확인하세요."
+                  downloadUrl={fileUrl}
+                  downloadName={file.name}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* 오른쪽: 추출된 원문 텍스트 */}
+          <div className="flex min-h-0 flex-col">
+            <div className="border-b border-slate-100 px-6 py-3 text-[12px] font-extrabold uppercase tracking-wide text-slate-400">
+              추출된 텍스트
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              {fullText ? (
+                <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-relaxed text-slate-800">
+                  {fullText}
+                </pre>
+              ) : (
+                <p className="text-[14px] font-medium text-slate-400">원문 텍스트를 불러올 수 없습니다.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewFallback({
+  message,
+  downloadUrl,
+  downloadName,
+}: {
+  message: string;
+  downloadUrl?: string | null;
+  downloadName?: string;
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+      <FileText size={40} className="text-slate-300" />
+      <p className="max-w-[280px] text-[13px] font-semibold text-slate-500">{message}</p>
+      {downloadUrl && (
+        <a
+          href={downloadUrl}
+          download={downloadName}
+          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-extrabold text-slate-700 transition hover:bg-slate-50"
+        >
+          파일 다운로드
+        </a>
+      )}
     </div>
   );
 }
