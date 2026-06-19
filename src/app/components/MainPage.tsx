@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { ServiceIntro } from "./ServiceIntro";
+import { UsageGuide } from "./UsageGuide";
+import { ContactSupport } from "./ContactSupport";
 import { FlowHeader } from "./main-flow/shared/FlowHeader";
 import { FlowStepper } from "./main-flow/shared/FlowStepper";
 import { StepFiveReport } from "./main-flow/steps/StepFiveReport";
@@ -10,7 +12,7 @@ import { StepTwoRecommendation } from "./main-flow/steps/StepTwoRecommendation";
 import type { FlowExecutionSettings, FlowInput, FlowStep, TranslationResult } from "./main-flow/types";
 
 export function MainPage() {
-  const [view, setView] = useState<"flow" | "intro">("flow");
+  const [view, setView] = useState<"flow" | "intro" | "guide" | "contact">("flow");
   const [step, setStep] = useState<FlowStep>(1);
   const [flowInput, setFlowInput] = useState<FlowInput | null>(null);
   const [executionSettings, setExecutionSettings] =
@@ -36,8 +38,33 @@ export function MainPage() {
           setView("intro");
           window.scrollTo({ top: 0, behavior: "smooth" });
         }}
+        onShowGuide={() => {
+          setView("guide");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+        onShowContact={() => {
+          setView("contact");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
       />
       {view === "intro" && <ServiceIntro onStart={() => setView("flow")} />}
+      {view === "guide" && (
+        <UsageGuide
+          onStart={() => {
+            setView("flow");
+            setStep(1);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        />
+      )}
+      {view === "contact" && (
+        <ContactSupport
+          onShowGuide={() => {
+            setView("guide");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        />
+      )}
       {view === "flow" && step > 1 && <FlowStepper current={step} />}
       {view === "flow" && step === 1 && <StepOneUpload onNext={handleInputComplete} />}
       {view === "flow" && step === 2 && (
