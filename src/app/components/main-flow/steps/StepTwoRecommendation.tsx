@@ -478,6 +478,7 @@ function SummaryPanel({
   analysis: AnalysisResult;
 }) {
   const [isIncludedInfoExpanded, setIsIncludedInfoExpanded] = useState(false);
+  const [isKeyNumbersOpen, setIsKeyNumbersOpen] = useState(false);
   const coreRows = [
     { label: "기본금리", value: analysis.coreNumbers.baseRate },
     { label: "우대금리", value: analysis.coreNumbers.preferentialRate },
@@ -490,6 +491,13 @@ function SummaryPanel({
     analysis.keyNumbersPreview.length > 0
       ? analysis.keyNumbersPreview
       : coreRows;
+  // 핵심 수치가 많으면 화면이 길어지므로 일부만 보여주고 나머지는 모달로 뺀다.
+  const KEY_NUMBER_PREVIEW_LIMIT = 5;
+  const visibleKeyNumberRows = keyNumberRows.slice(0, KEY_NUMBER_PREVIEW_LIMIT);
+  const hiddenKeyNumberCount = Math.max(
+    keyNumberRows.length - visibleKeyNumberRows.length,
+    0
+  );
   const includedInfoItems = splitIncludedInfo(analysis.includedInfo);
   const visibleIncludedInfoItems = isIncludedInfoExpanded
     ? includedInfoItems
@@ -610,29 +618,110 @@ function SummaryPanel({
 
       <div className="mt-5 rounded-lg border border-red-100 bg-red-50 p-5">
         <div className="flex items-center justify-between">
-          <h3 className="text-[15px] font-extrabold text-slate-950">핵심 수치 미리보기</h3>
-          <button className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600">
-            자세히 보기
-          </button>
+          <h3 className="text-[15px] font-extrabold text-slate-950">
+            핵심 수치 미리보기
+            {keyNumberRows.length > 0 && (
+              <span className="ml-2 text-[13px] font-semibold text-slate-500">
+                ({keyNumberRows.length})
+              </span>
+            )}
+          </h3>
+          {hiddenKeyNumberCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsKeyNumbersOpen(true)}
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              자세히 보기
+            </button>
+          )}
         </div>
         <div className="mt-4 space-y-3">
-          {keyNumberRows.length > 0 ? keyNumberRows.map((item) => {
-            return (
-              <div key={item.label} className="grid grid-cols-[32px_100px_1fr] items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-red-500">
-                  <Check size={17} />
+          {keyNumberRows.length > 0 ? (
+            <>
+              {visibleKeyNumberRows.map((item) => (
+                <div key={item.label} className="grid grid-cols-[32px_100px_1fr] items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-red-500">
+                    <Check size={17} />
+                  </div>
+                  <span className="text-[14px] font-extrabold text-slate-800">{item.label}</span>
+                  <span className="text-[14px] font-medium text-slate-600">{item.value}</span>
                 </div>
-                <span className="text-[14px] font-extrabold text-slate-800">{item.label}</span>
-                <span className="text-[14px] font-medium text-slate-600">{item.value}</span>
-              </div>
-            );
-          }) : (
+              ))}
+              {hiddenKeyNumberCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsKeyNumbersOpen(true)}
+                  className="w-full rounded-lg border border-dashed border-red-200 bg-white py-2 text-[13px] font-extrabold text-red-600 hover:bg-red-50"
+                >
+                  +{hiddenKeyNumberCount}건 더 보기
+                </button>
+              )}
+            </>
+          ) : (
             <p className="text-[14px] font-medium text-slate-500">
               원문에서 확인된 핵심 수치가 없습니다.
             </p>
           )}
         </div>
       </div>
+
+      {isKeyNumbersOpen && (
+        <KeyNumbersDialog rows={keyNumberRows} onClose={() => setIsKeyNumbersOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+function KeyNumbersDialog({
+  rows,
+  onClose,
+}: {
+  rows: { label: string; value: string }[];
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-6"
+      onClick={onClose}
+    >
+      <section
+        className="flex max-h-[80vh] w-full max-w-[560px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <div>
+            <h2 className="text-[19px] font-black text-slate-950">핵심 수치 전체</h2>
+            <p className="mt-1 text-[13px] font-semibold text-slate-500">
+              원문에서 추출한 핵심 수치 {rows.length}건
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+            aria-label="닫기"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="max-h-[64vh] overflow-y-auto px-6 py-5">
+          <div className="space-y-2">
+            {rows.map((item, index) => (
+              <div
+                key={`${item.label}-${index}`}
+                className="grid grid-cols-[32px_120px_1fr] items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-red-500">
+                  <Check size={17} />
+                </div>
+                <span className="text-[14px] font-extrabold text-slate-800">{item.label}</span>
+                <span className="text-[14px] font-medium text-slate-600">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
