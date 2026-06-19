@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   CheckCircle2,
-  ChevronDown,
   Circle,
   Clock3,
   FileText,
@@ -9,7 +8,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { AiCube } from "../shared/AiCube";
+import monitorPinkImage from "@/assets/images/monitor_pink.png";
 import { BottomBar } from "../shared/BottomBar";
 import { getApiBaseUrl } from "../../../api";
 import type { FlowExecutionSettings, FlowInput, TranslationResult, ValidationResult } from "../types";
@@ -483,9 +482,9 @@ export function StepThreeProcessing({
   }
 
   return (
-    <div className="mx-auto max-w-[1480px] px-10 py-4">
-      <section className="rounded-xl border border-red-100 bg-gradient-to-r from-red-50 via-white to-red-50 p-9 shadow-sm">
-        <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-[1fr_380px]">
+    <div className="mx-auto max-w-[1580px] px-10 py-4">
+      <section className="rounded-xl border border-red-100 bg-gradient-to-r from-red-50 via-white to-red-50 px-8 py-3 shadow-sm">
+        <div className="grid grid-cols-1 items-center gap-4 lg:grid-cols-[minmax(0,1fr)_460px]">
           <div className="flex items-start gap-7">
             <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600">
               <Sparkles size={28} />
@@ -494,17 +493,17 @@ export function StepThreeProcessing({
               <h1 className="text-[32px] font-black tracking-tight text-slate-950">
                 번역 및 검수를 진행하고 있습니다
               </h1>
-              <p className="mt-4 max-w-[660px] text-[17px] font-medium leading-8 text-slate-700">
+              <p className="mt-2 max-w-[660px] text-[16px] font-medium leading-7 text-slate-700">
                 현재 승인된 번역 데이터와 금융용어집을 비교하여 가장 적합한 표현을 선택하고 있습니다.
               </p>
-              <div className="mt-5 flex flex-wrap gap-4">
+              <div className="mt-3 flex flex-nowrap gap-3">
                 <StatusPill color="red" label="승인 번역 데이터 참조 중" />
                 <StatusPill color="amber" label="금융용어 표준 표현 적용 중" />
                 <StatusPill color="blue" label={statusLanguageLabel} />
               </div>
-              <div className="mt-6 rounded-lg border border-slate-200 bg-white px-5 py-4">
+              <div className="mt-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5">
                 <div className="flex flex-wrap items-center gap-3 text-[15px] font-bold text-slate-800">
-                  <Clock3 size={21} className="text-slate-500" />
+                  <Clock3 size={20} className="text-slate-500" />
                   처리 예상 시간
                   <span className="text-[18px] font-black text-red-600">
                     {estimatedProcessingTime}
@@ -516,12 +515,18 @@ export function StepThreeProcessing({
               </div>
             </div>
           </div>
-          <AiCube compact />
+          <div className="flex justify-center lg:justify-end">
+            <img
+              src={monitorPinkImage}
+              alt=""
+              className="h-auto w-full max-w-[430px] object-contain"
+            />
+          </div>
         </div>
       </section>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[480px_1fr]">
-        <section className="rounded-xl border border-slate-200 bg-white p-7 shadow-sm">
+        <section className="rounded-xl border border-slate-200 bg-white p-7 shadow-sm lg:min-h-[474px]">
           <h2 className="text-[22px] font-black text-slate-950">AI 처리 상태</h2>
           <div className="mt-8 space-y-8">
             <ProcessItem
@@ -566,10 +571,6 @@ export function StepThreeProcessing({
               }
             />
           </div>
-          <button className="mt-10 flex h-13 w-full items-center justify-between rounded-lg border border-slate-200 px-5 text-[16px] font-extrabold text-slate-950">
-            상세 처리 과정 보기
-            <ChevronDown size={20} />
-          </button>
         </section>
 
         <section>
@@ -577,7 +578,7 @@ export function StepThreeProcessing({
             중간 산출물 미리보기
             <Info size={19} className="text-slate-400" />
           </h2>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:auto-rows-fr lg:grid-cols-3">
             <PreviewCard title="문서 구조 분석" tone="red">
               <p className="font-extrabold">제목</p>
               <p>{documentStructure.title || "-"}</p>
@@ -601,7 +602,7 @@ export function StepThreeProcessing({
                 <p className="text-red-600">{termError}</p>
               ) : termMatches.length > 0 ? (
                 <>
-                  <div className="max-h-[260px] space-y-3 overflow-y-auto pr-1">
+                  <div className="space-y-3">
                     {termMatches.slice(0, 6).map((term) => (
                       <div key={term.id} className="border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
                         <div className="grid grid-cols-[82px_20px_1fr] gap-1">
@@ -667,8 +668,28 @@ export function StepThreeProcessing({
                 <Sparkles className="text-violet-600" size={24} />
                 {translationResult ? "번역 초안 생성 완료" : "번역 초안 생성 중"}
               </h3>
-              <span className="rounded-full bg-violet-100 px-4 py-1 text-[14px] font-extrabold text-violet-700">
-                {translationResult ? "완료" : isTranslating ? "생성 중..." : "대기 중"}
+              <span
+                className={[
+                  "inline-flex items-center gap-2 rounded-full px-4 py-1 text-[14px] font-extrabold",
+                  isTranslating
+                    ? "bg-red-50 text-red-700 shadow-[0_0_18px_rgba(220,38,38,0.22)]"
+                    : "bg-violet-100 text-violet-700",
+                ].join(" ")}
+              >
+                {translationResult ? (
+                  "완료"
+                ) : isTranslating ? (
+                  <>
+                    생성 중
+                    <span className="flex items-center gap-0.5 text-[18px] leading-none text-red-600">
+                      <span className="animate-pulse drop-shadow-[0_0_6px_rgba(220,38,38,0.95)]">.</span>
+                      <span className="animate-pulse drop-shadow-[0_0_6px_rgba(239,68,68,0.9)] [animation-delay:150ms]">.</span>
+                      <span className="animate-pulse drop-shadow-[0_0_6px_rgba(248,113,113,0.85)] [animation-delay:300ms]">.</span>
+                    </span>
+                  </>
+                ) : (
+                  "대기 중"
+                )}
               </span>
             </div>
             {translationError ? (
@@ -717,7 +738,12 @@ export function StepThreeProcessing({
           !translationResult
             ? "번역 완료 대기 중"
             : isValidating
-              ? "검수 진행 중..."
+              ? (
+                <span className="flex items-center gap-3">
+                  <span className="h-2.5 w-2.5 animate-ping rounded-full bg-white/80" />
+                  검수 진행 중...
+                </span>
+              )
               : "결과 검토로 이동"
         }
         onNext={() => {
@@ -725,6 +751,7 @@ export function StepThreeProcessing({
           onNext(translationResult, validationResult);
         }}
         disabled={!translationResult || isValidating}
+        isBusy={isTranslating || isValidating}
         onDisabledClick={() => {
           if (translationError) {
             window.alert(translationError);
@@ -831,12 +858,12 @@ function PreviewCard({
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white text-[14px] leading-7 text-slate-700">
+    <div className="flex h-[560px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white text-[14px] leading-7 text-slate-700">
       <div className={`flex items-center gap-3 border-b px-5 py-3 ${classes[tone]}`}>
         <FileText size={18} />
         <h3 className="font-extrabold text-slate-950">{title}</h3>
       </div>
-      <div className="p-5">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
     </div>
   );
 }

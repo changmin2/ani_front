@@ -1,13 +1,15 @@
 import { ChevronLeft, ChevronRight, Save, ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
 
 type BottomBarProps = {
   leftLabel: string;
   onBack: () => void;
   helper?: string;
   secondaryLabel?: string;
-  rightLabel: string;
+  rightLabel: ReactNode;
   onNext: () => void;
   disabled?: boolean;
+  isBusy?: boolean;
   onDisabledClick?: () => void;
 };
 
@@ -19,6 +21,7 @@ export function BottomBar({
   rightLabel,
   onNext,
   disabled,
+  isBusy,
   onDisabledClick,
 }: BottomBarProps) {
   return (
@@ -57,7 +60,9 @@ export function BottomBar({
           aria-disabled={disabled}
           className={[
             "flex h-12 min-w-72 items-center justify-center gap-3 rounded-lg text-[17px] font-extrabold shadow-sm transition",
-            disabled
+            isBusy
+              ? "cursor-wait animate-pulse border border-red-200 bg-red-50 text-red-700 shadow-[0_0_22px_rgba(220,38,38,0.2)] ring-2 ring-red-100"
+              : disabled
               ? "cursor-not-allowed bg-slate-200 text-slate-400"
               : "bg-red-600 text-white shadow-[0_8px_18px_rgba(220,0,0,0.2)] hover:bg-red-700",
           ].join(" ")}
