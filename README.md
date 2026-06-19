@@ -82,5 +82,5 @@ UI 디자인 시안은 [docs/ui_design](docs/ui_design) 디렉토리에서 확�
 
 ## 관련 문서
 
-- [아이디어 제안서](../ani_server/docs/아이디어_제안서.md)
+- [아이디어 제안서](docs/아이디어_제안서.md)
 - [UI 가이드라인](guidelines/Guidelines.md)

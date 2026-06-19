@@ -13,7 +13,7 @@ import {
 import { formatFileSize } from "../analyzeInput";
 import { FeatureStrip } from "../shared/FeatureStrip";
 import lingoLogo from "@/assets/images/lingo_logo.png";
-import monitorImage from "@/assets/images/monitor-shadow-microsoft.png";
+import monitorImage from "@/assets/images/monitor-shadow-microsoft-white.png";
 import type { FlowInput } from "../types";
 
 type InputMode = "file" | "text";
@@ -135,7 +135,7 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
 
   return (
     <div className="select-none">
-      <div className="mx-auto grid max-w-[1320px] grid-cols-1 items-center gap-12 px-8 pb-6 pt-14 lg:grid-cols-[590px_1fr]">
+      <div className="mx-auto grid max-w-[1320px] grid-cols-1 items-center gap-12 px-8 pb-6 pt-20 lg:grid-cols-[590px_1fr]">
         <section>
           <div className="h-[100px] w-[350px] overflow-hidden" aria-label="Lingo">
             <img
