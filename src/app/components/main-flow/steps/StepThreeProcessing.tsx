@@ -11,7 +11,7 @@ import {
 import monitorPinkImage from "@/assets/images/monitor_pink.png";
 import { BottomBar } from "../shared/BottomBar";
 import { getApiBaseUrl } from "../../../api";
-import type { FlowExecutionSettings, FlowInput, TranslationResult, ValidationResult } from "../types";
+import type { FlowExecutionSettings, FlowInput, TranslationByLanguage, TranslationResult, ValidationResult } from "../types";
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -215,6 +215,26 @@ function getSourceText(input: FlowInput | null) {
   return "";
 }
 
+function buildFullTranslatedText(translation: TranslationByLanguage) {
+  // 검수에는 요약될 수 있는 full_text 대신, 모든 섹션을 합친 완전한 번역문을 보낸다.
+  // 이렇게 해야 sections에만 담긴 상세 수치가 검수에서 누락으로 오인되지 않는다.
+  const sectionText = [...translation.sections]
+    .sort((first, second) => first.order - second.order)
+    .map((section) =>
+      `${section.translated_label || section.source_label}\n${section.translated_text}`.trim()
+    )
+    .filter(Boolean)
+    .join("\n\n");
+
+  const reconstructed = [translation.title, translation.summary, sectionText]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+
+  // 섹션이 비어 재구성이 불가능하면 full_text로 폴백한다.
+  return reconstructed || translation.full_text;
+}
+
 function dedupeTermMatches(matches: FinanceTermMatch[]) {
   const seenTerms = new Set<string>();
 
@@ -409,7 +429,7 @@ export function StepThreeProcessing({
             // language_code는 이미 en/vi/zh/kk 코드라 그대로 사용한다.
             translations: translationResult!.translations.map((translation) => ({
               targetLanguage: translation.language_code,
-              translatedText: translation.full_text,
+              translatedText: buildFullTranslatedText(translation),
             })),
             keyInformation,
           }),
