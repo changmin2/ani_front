@@ -56,7 +56,7 @@ export function StepFourReview({
       warning: 0,
       error: 0,
       review: 0,
-    };
+    }; 
   const validationIssues = selectedValidation?.validationResult.issues ?? [];
   const hasValidation = Boolean(validationResult);
   const analysis = input?.analysisResponse?.analysis;

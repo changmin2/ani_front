@@ -23,7 +23,12 @@ export function MainPage() {
     useState<ValidationResult | null>(null);
 
   const handleInputComplete = (input: FlowInput) => {
+    // 새 문서를 분석하면 이전 문서의 하위 단계 결과(설정/번역/검수)는 모두 무효이므로 초기화한다.
+    // 초기화하지 않으면 새 파일을 올려도 4·5페이지에 이전 문서의 번역/검수 결과가 남아 표시된다.
     setFlowInput(input);
+    setExecutionSettings(null);
+    setTranslationResult(null);
+    setValidationResult(null);
     setStep(2);
   };
 
