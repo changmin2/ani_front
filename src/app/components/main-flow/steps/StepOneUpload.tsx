@@ -13,7 +13,7 @@ import {
 import { formatFileSize } from "../analyzeInput";
 import { FeatureStrip } from "../shared/FeatureStrip";
 import lingoLogo from "@/assets/images/lingo_logo.png";
-import monitorImage from "@/assets/images/monitor-shadow.png";
+import monitorImage from "@/assets/images/monitor-shadow-microsoft.png";
 import type { FlowInput } from "../types";
 
 type InputMode = "file" | "text";
