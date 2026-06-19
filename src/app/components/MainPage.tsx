@@ -27,6 +27,11 @@ export function MainPage() {
     <div className="min-h-screen bg-white text-slate-950">
       <FlowHeader
         activeView={view}
+        onGoHome={() => {
+          setView("flow");
+          setStep(1);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
         onShowIntro={() => {
           setView("intro");
           window.scrollTo({ top: 0, behavior: "smooth" });

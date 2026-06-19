@@ -3,26 +3,35 @@ import bnkFinancialGroupCi from "@/assets/images/bnk-financial-group-ci.png";
 
 export function FlowHeader({
   activeView = "flow",
+  onGoHome,
   onShowIntro,
 }: {
   activeView?: "flow" | "intro";
+  onGoHome?: () => void;
   onShowIntro?: () => void;
 }) {
   return (
     <header className="h-20 select-none border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-full max-w-[1536px] items-center justify-between px-8">
-        <img
-          src={bnkFinancialGroupCi}
-          alt="BNK금융그룹"
-          className="h-8 w-auto object-contain"
-        />
+        <button
+          type="button"
+          onClick={onGoHome}
+          aria-label="문서 업로드 화면으로 이동"
+          className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red-600"
+        >
+          <img
+            src={bnkFinancialGroupCi}
+            alt="BNK금융그룹"
+            className="h-8 w-auto object-contain"
+          />
+        </button>
 
         <nav className="hidden items-center gap-14 text-[16px] font-semibold text-slate-950 md:flex">
           <button
             onClick={onShowIntro}
             className={[
               "relative h-20 transition-colors hover:text-red-600",
-              activeView === "intro" ? "font-extrabold text-red-600" : "",
+              activeView === "intro" ? "text-red-600" : "",
             ].join(" ")}
           >
             서비스 소개
