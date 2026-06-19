@@ -1,22 +1,15 @@
 import { Bell, User } from "lucide-react";
+import bnkFinancialGroupCi from "@/assets/images/bnk-financial-group-ci.png";
 
 export function FlowHeader() {
   return (
-    <header className="h-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <header className="h-20 select-none border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-full max-w-[1536px] items-center justify-between px-8">
-        <div className="flex items-end gap-3">
-          <div className="text-[34px] font-black leading-none tracking-[-0.03em] text-[#df0000]">
-            BNK
-          </div>
-          <div className="pb-1">
-            <div className="text-[24px] font-extrabold leading-none text-[#4b3b2b]">
-              금융그룹
-            </div>
-            <div className="mt-1 text-[10px] font-semibold tracking-tight text-[#4b3b2b]">
-              BNK Financial Group
-            </div>
-          </div>
-        </div>
+        <img
+          src={bnkFinancialGroupCi}
+          alt="BNK금융그룹"
+          className="h-8 w-auto object-contain"
+        />
 
         <nav className="hidden items-center gap-14 text-[16px] font-semibold text-slate-950 md:flex">
           <button className="hover:text-red-600">서비스 소개</button>

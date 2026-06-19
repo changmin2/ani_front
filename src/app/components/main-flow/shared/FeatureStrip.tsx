@@ -2,10 +2,26 @@ import { BookOpen, FileText, LayoutTemplate, Shield } from "lucide-react";
 
 export function FeatureStrip() {
   const items = [
-    { icon: FileText, title: "문서 자동 분석", desc: "문서 유형 및 구조를 AI가 자동으로 분석합니다." },
-    { icon: BookOpen, title: "금융용어 일관성", desc: "금융용어집과 승인 번역 데이터를 활용하여 정확하게 번역합니다." },
-    { icon: Shield, title: "AI 검수 및 품질 관리", desc: "핵심 정보 검수와 위험 문구 점검으로 번역 품질을 높입니다." },
-    { icon: LayoutTemplate, title: "게시용 문안 생성", desc: "다양한 채널과 템플릿에 맞춰 최적의 문안을 생성합니다." },
+    {
+      icon: FileText,
+      title: "문서 자동 분석",
+      desc: ["문서 유형 및 구조를", "AI가 자동으로 분석합니다."],
+    },
+    {
+      icon: BookOpen,
+      title: "금융용어 일관성",
+      desc: ["금융용어집과 승인 번역 데이터를", "활용하여 정확하게 번역합니다."],
+    },
+    {
+      icon: Shield,
+      title: "AI 검수 및 품질 관리",
+      desc: ["핵심 정보 검수와 위험 문구 점검으로", "번역 품질을 높입니다."],
+    },
+    {
+      icon: LayoutTemplate,
+      title: "게시용 문안 생성",
+      desc: ["다양한 채널과 템플릿에 맞춰", "최적의 문안을 생성합니다."],
+    },
   ];
 
   return (
@@ -22,8 +38,14 @@ export function FeatureStrip() {
           >
             <Icon className="mt-1 text-red-600" size={32} strokeWidth={2.1} />
             <div>
-              <h3 className="text-[17px] font-extrabold text-slate-950">{item.title}</h3>
-              <p className="mt-2 text-[13px] leading-6 text-slate-600">{item.desc}</p>
+              <h3 className="text-[16px] font-extrabold text-slate-950">{item.title}</h3>
+              <p className="mt-2 text-[13px] leading-5 text-slate-600">
+                {item.desc.map((line) => (
+                  <span key={line} className="block whitespace-nowrap">
+                    {line}
+                  </span>
+                ))}
+              </p>
             </div>
           </div>
         );
