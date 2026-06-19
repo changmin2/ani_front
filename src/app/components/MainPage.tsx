@@ -6,13 +6,15 @@ import { StepFourReview } from "./main-flow/steps/StepFourReview";
 import { StepOneUpload } from "./main-flow/steps/StepOneUpload";
 import { StepThreeProcessing } from "./main-flow/steps/StepThreeProcessing";
 import { StepTwoRecommendation } from "./main-flow/steps/StepTwoRecommendation";
-import type { FlowExecutionSettings, FlowInput, FlowStep } from "./main-flow/types";
+import type { FlowExecutionSettings, FlowInput, FlowStep, TranslationResult } from "./main-flow/types";
 
 export function MainPage() {
   const [step, setStep] = useState<FlowStep>(1);
   const [flowInput, setFlowInput] = useState<FlowInput | null>(null);
   const [executionSettings, setExecutionSettings] =
     useState<FlowExecutionSettings | null>(null);
+  const [translationResult, setTranslationResult] =
+    useState<TranslationResult | null>(null);
 
   const handleInputComplete = (input: FlowInput) => {
     setFlowInput(input);
@@ -37,7 +39,10 @@ export function MainPage() {
       {step === 3 && (
         <StepThreeProcessing
           onBack={() => setStep(2)}
-          onNext={() => setStep(4)}
+          onNext={(result) => {
+            setTranslationResult(result);
+            setStep(4);
+          }}
           input={flowInput}
           settings={executionSettings}
         />
@@ -47,6 +52,7 @@ export function MainPage() {
           onBack={() => setStep(3)}
           onNext={() => setStep(5)}
           input={flowInput}
+          translationResult={translationResult}
         />
       )}
       {step === 5 && <StepFiveReport onBack={() => setStep(4)} />}

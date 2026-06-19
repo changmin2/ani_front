@@ -69,6 +69,28 @@ export type DocumentAnalyzeResponse = {
   retrieved_documents: RetrievedDocument[];
 };
 
+export type TranslationSection = {
+  id: string;
+  order: number;
+  source_label: string;
+  source_text: string;
+  translated_label: string;
+  translated_text: string;
+};
+
+export type TranslationByLanguage = {
+  language: string;
+  language_code: string;
+  title: string;
+  summary: string;
+  sections: TranslationSection[];
+  full_text: string;
+};
+
+export type TranslationResult = {
+  translations: TranslationByLanguage[];
+};
+
 export type FlowExecutionSettings = {
   // 2페이지에서 사용자가 최종 확정한 실행 설정.
   // 3페이지가 선택 언어/검수 기준에 맞춰 진행 문구를 만드는 데 사용한다.

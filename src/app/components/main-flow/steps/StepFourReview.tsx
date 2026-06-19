@@ -11,17 +11,20 @@ import {
   Info,
 } from "lucide-react";
 import { BottomBar } from "../shared/BottomBar";
-import type { FlowInput, KeyNumberPreview } from "../types";
+import type { FlowInput, KeyNumberPreview, TranslationResult } from "../types";
 
 export function StepFourReview({
   onBack,
   onNext,
   input,
+  translationResult,
 }: {
   onBack: () => void;
   onNext: () => void;
   input: FlowInput | null;
+  translationResult: TranslationResult | null;
 }) {
+  const selectedTranslation = translationResult?.translations[0];
   const analysis = input?.analysisResponse?.analysis;
   const keyNumbers = analysis?.key_numbers_preview ?? [];
   const includedInformation = analysis?.included_information ?? [];
@@ -93,7 +96,7 @@ export function StepFourReview({
 
           <article className="max-h-[540px] overflow-hidden pr-5 text-[16px] leading-7 text-slate-700">
             <h3 className="mt-7 text-[18px] font-black text-slate-950">
-              BNK The Convenient Time Deposit
+              {selectedTranslation?.title || "BNK The Convenient Time Deposit"}
             </h3>
             <p className="mt-3">
               A time deposit product that helps you grow your assets with stable interest benefits and reliable deposit protection.

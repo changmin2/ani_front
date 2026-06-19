@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { AiCube } from "../shared/AiCube";
 import { BottomBar } from "../shared/BottomBar";
-import type { FlowExecutionSettings, FlowInput } from "../types";
+import type { FlowExecutionSettings, FlowInput, TranslationResult } from "../types";
 
 const API_BASE_URL = "http://localhost:8000";
 
@@ -32,7 +32,7 @@ type TermLanguage = {
 
 type StepThreeProcessingProps = {
   onBack: () => void;
-  onNext: () => void;
+  onNext: (translationResult: TranslationResult) => void;
   input: FlowInput | null;
   settings: FlowExecutionSettings | null;
 };
@@ -195,7 +195,9 @@ export function StepThreeProcessing({
   input,
   settings,
 }: StepThreeProcessingProps) {
-  const [ready, setReady] = useState(false);
+  const [translationResult, setTranslationResult] = useState<TranslationResult | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translationError, setTranslationError] = useState("");
   const [termMatches, setTermMatches] = useState<FinanceTermMatch[]>([]);
   const [isLoadingTerms, setIsLoadingTerms] = useState(false);
   const [hasLoadedTerms, setHasLoadedTerms] = useState(false);
@@ -213,13 +215,6 @@ export function StepThreeProcessing({
   const statusLanguageLabel =
     languageNames.length > 0 ? `${formatList(languageNames)} 번역 준비 중` : "번역 준비 중";
   const shouldWaitForTermMatches = Boolean(sourceText.trim()) && !hasLoadedTerms;
-
-  useEffect(() => {
-    // 현재는 실제 번역 API가 없으므로 짧은 처리 대기 후 다음 단계 버튼을 활성화한다.
-    // 추후 번역/검수 API가 생기면 이 timer 대신 실제 작업 완료 상태를 연결하면 된다.
-    const timer = window.setTimeout(() => setReady(true), 900);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     if (!sourceText.trim()) {
@@ -274,6 +269,67 @@ export function StepThreeProcessing({
 
     return () => controller.abort();
   }, [sourceText]);
+
+
+  useEffect(() => {
+    if (!hasLoadedTerms || !sourceText.trim()) return;
+
+    const targetLanguages = settings?.targetLanguages ?? [];
+
+    if (targetLanguages.length === 0) {
+      setTranslationResult(null);
+      setTranslationError("대상 언어가 선택되지 않았습니다.");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function translateDocument() {
+      setIsTranslating(true);
+      setTranslationResult(null);
+      setTranslationError("");
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/documents/translate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            source_text: sourceText,
+            document_analysis: input?.analysisResponse?.analysis ?? {},
+            target_languages: targetLanguages,
+            tone_style: settings?.toneStyle ?? "공식적이고 신뢰감 있는 금융 문체",
+            finance_terms: termMatches,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          throw new Error(error?.detail || "번역 생성에 실패했습니다.");
+        }
+
+        const data = await response.json();
+        setTranslationResult(data);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setTranslationError(
+          error instanceof Error
+            ? error.message
+            : "번역 생성 중 오류가 발생했습니다."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsTranslating(false);
+        }
+      }
+    }
+
+    translateDocument();
+
+    return () => controller.abort();
+  }, [hasLoadedTerms, input?.analysisResponse?.analysis, settings?.targetLanguages, settings?.toneStyle, sourceText, termMatches]);
 
   if (shouldWaitForTermMatches) {
     return (
@@ -364,9 +420,14 @@ export function StepThreeProcessing({
               desc={completedDescription}
             />
             <ProcessItem
-              active
-              title="현재 진행 중"
-              desc="이전 승인 번역 데이터와 금융용어집을 비교하여 가장 적합한 표현을 선택하고 있습니다."
+              active={!translationResult}
+              done={Boolean(translationResult)}
+              title={translationResult ? "번역 생성 완료" : "현재 진행 중"}
+              desc={
+                translationResult
+                  ? `${translationResult.translations.length}개 언어의 번역 초안이 생성되었습니다.`
+                  : "이전 승인 번역 데이터와 금융용어집을 비교하여 가장 적합한 표현을 선택하고 있습니다."
+              }
             />
             <ProcessItem
               title="다음 작업"
@@ -468,19 +529,39 @@ export function StepThreeProcessing({
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-3 text-[20px] font-black text-slate-950">
                 <Sparkles className="text-violet-600" size={24} />
-                번역 초안 생성 중
+                {translationResult ? "번역 초안 생성 완료" : "번역 초안 생성 중"}
               </h3>
               <span className="rounded-full bg-violet-100 px-4 py-1 text-[14px] font-extrabold text-violet-700">
-                생성 중...
+                {translationResult ? "완료" : isTranslating ? "생성 중..." : "대기 중"}
               </span>
             </div>
-            <p className="mt-4 font-extrabold text-slate-950">BNK The Convenient Time Deposit</p>
-            <p className="mt-2 text-slate-700">
-              This product is designed for foreign customers who want a stable savings option with clear interest benefits...
-            </p>
-            <p className="mt-3 text-[17px] font-bold text-violet-700">
-              우대금리 조건 문장을 검수하고 있습니다.
-            </p>
+            {translationError ? (
+              <p className="mt-4 text-[15px] font-bold text-red-600">{translationError}</p>
+            ) : translationResult ? (
+              <>
+                <p className="mt-4 font-extrabold text-slate-950">
+                  {translationResult.translations[0]?.title || "번역 제목 없음"}
+                </p>
+                <p className="mt-2 text-slate-700">
+                  {translationResult.translations[0]?.summary ||
+                    translationResult.translations[0]?.full_text ||
+                    "번역 초안이 생성되었습니다."}
+                </p>
+                <p className="mt-3 text-[17px] font-bold text-violet-700">
+                  {translationResult.translations.length}개 언어 번역이 완료되었습니다.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-4 font-extrabold text-slate-950">번역 Agent 준비 중</p>
+                <p className="mt-2 text-slate-700">
+                  선택 언어, 문서 구조, 핵심 수치, 금융용어 매칭 결과를 묶어 번역 초안을 생성하고 있습니다.
+                </p>
+                <p className="mt-3 text-[17px] font-bold text-violet-700">
+                  번역이 완료되면 결과 검토 버튼이 활성화됩니다.
+                </p>
+              </>
+            )}
           </div>
         </section>
       </div>
@@ -489,9 +570,17 @@ export function StepThreeProcessing({
         leftLabel="이전으로"
         onBack={onBack}
         helper="입력된 문서는 암호화되어 안전하게 처리되며, 분석 후 자동으로 삭제됩니다."
-        rightLabel="결과 검토로 이동"
-        onNext={onNext}
-        disabled={!ready}
+        rightLabel={translationResult ? "결과 검토로 이동" : "번역 완료 대기 중"}
+        onNext={() => {
+          if (!translationResult) return;
+          onNext(translationResult);
+        }}
+        disabled={!translationResult}
+        onDisabledClick={() => {
+          if (translationError) {
+            window.alert(translationError);
+          }
+        }}
       />
     </div>
   );
