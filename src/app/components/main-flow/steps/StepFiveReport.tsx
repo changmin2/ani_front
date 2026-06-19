@@ -36,8 +36,8 @@ const channels = [
 ];
 
 const templates = [
-  { title: "모바일 공지형", sub: "App Notice", selected: true },
-  { title: "홈페이지 카드형", sub: "Web Card" },
+  { title: "홈페이지 카드형", sub: "Web Card", selected: true },
+  { title: "모바일 공지형", sub: "App Notice" },
   { title: "영업점 게시문형", sub: "Branch Poster" },
   { title: "SNS 카드뉴스형", sub: "SNS Card" },
   { title: "배너형", sub: "Banner" },
