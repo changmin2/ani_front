@@ -72,7 +72,7 @@ const deviceOptions = [
   { id: "pc", icon: Monitor },
 ] as const;
 
-const previewTabs = ["모바일 앱 공지", "홈페이지 안내", "영업점 게시문"];
+const previewTabs = ["홈페이지", "모바일 앱 공지", "영업점 게시문"];
 
 export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps) {
   // 레이아웃 보존 번역 PDF 다운로드 상태.
@@ -146,7 +146,7 @@ export function StepFiveReport({ onBack, input, settings }: StepFiveReportProps)
   );
 
   // 미리보기 디바이스: 단일 선택
-  const [device, setDevice] = useState<(typeof deviceOptions)[number]["id"]>("mobile");
+  const [device, setDevice] = useState<(typeof deviceOptions)[number]["id"]>("pc");
 
   // 미리보기 채널 탭: 단일 선택
   const [activeTab, setActiveTab] = useState(0);
