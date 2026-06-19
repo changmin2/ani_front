@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ServiceIntro } from "./ServiceIntro";
 import { FlowHeader } from "./main-flow/shared/FlowHeader";
 import { FlowStepper } from "./main-flow/shared/FlowStepper";
 import { StepFiveReport } from "./main-flow/steps/StepFiveReport";
@@ -9,6 +10,7 @@ import { StepTwoRecommendation } from "./main-flow/steps/StepTwoRecommendation";
 import type { FlowExecutionSettings, FlowInput, FlowStep, TranslationResult } from "./main-flow/types";
 
 export function MainPage() {
+  const [view, setView] = useState<"flow" | "intro">("flow");
   const [step, setStep] = useState<FlowStep>(1);
   const [flowInput, setFlowInput] = useState<FlowInput | null>(null);
   const [executionSettings, setExecutionSettings] =
@@ -23,10 +25,17 @@ export function MainPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-950">
-      <FlowHeader />
-      {step > 1 && <FlowStepper current={step} />}
-      {step === 1 && <StepOneUpload onNext={handleInputComplete} />}
-      {step === 2 && (
+      <FlowHeader
+        activeView={view}
+        onShowIntro={() => {
+          setView("intro");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+      />
+      {view === "intro" && <ServiceIntro onStart={() => setView("flow")} />}
+      {view === "flow" && step > 1 && <FlowStepper current={step} />}
+      {view === "flow" && step === 1 && <StepOneUpload onNext={handleInputComplete} />}
+      {view === "flow" && step === 2 && (
         <StepTwoRecommendation
           onBack={() => setStep(1)}
           onNext={(settings) => {
@@ -36,7 +45,7 @@ export function MainPage() {
           input={flowInput}
         />
       )}
-      {step === 3 && (
+      {view === "flow" && step === 3 && (
         <StepThreeProcessing
           onBack={() => setStep(2)}
           onNext={(result) => {
@@ -47,7 +56,7 @@ export function MainPage() {
           settings={executionSettings}
         />
       )}
-      {step === 4 && (
+      {view === "flow" && step === 4 && (
         <StepFourReview
           onBack={() => setStep(3)}
           onNext={() => setStep(5)}
@@ -55,7 +64,7 @@ export function MainPage() {
           translationResult={translationResult}
         />
       )}
-      {step === 5 && <StepFiveReport onBack={() => setStep(4)} />}
+      {view === "flow" && step === 5 && <StepFiveReport onBack={() => setStep(4)} />}
     </div>
   );
 }
