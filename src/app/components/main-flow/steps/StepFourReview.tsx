@@ -149,7 +149,7 @@ export function StepFourReview({
   };
 
   return (
-    <div className="mx-auto max-w-[1480px] px-12 py-7">
+    <div className="mx-auto max-w-[1640px] px-12 py-7">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[34px] font-black tracking-tight text-slate-950">
@@ -167,7 +167,7 @@ export function StepFourReview({
         </div>
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr_440px]">
+      <div className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(640px,1fr)_440px]">
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="flex items-center gap-3 text-[19px] font-black text-slate-950">
             원문 핵심 정보
@@ -194,8 +194,8 @@ export function StepFourReview({
 
         <section className="rounded-xl border border-slate-200 bg-white p-7 shadow-sm">
           <div className="border-b border-slate-100 pb-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <h2 className="text-[19px] font-black text-slate-950">번역 결과</h2>
                   <Globe2 size={18} className="text-violet-700" />
@@ -203,51 +203,51 @@ export function StepFourReview({
                     {translations.length}개 언어
                   </span>
                 </div>
-                <div className="mt-4 flex max-w-full gap-2 overflow-x-auto pb-1">
-                  {translations.length > 0 ? (
-                    translations.map((translation) => (
-                      <button
-                        key={translation.language_code || translation.language}
-                        onClick={() => setSelectedLanguageCode(translation.language_code)}
-                        className={[
-                          "h-9 shrink-0 rounded-lg border px-4 text-[13px] font-extrabold transition",
-                          selectedTranslation?.language_code === translation.language_code
-                            ? "border-violet-500 bg-violet-50 text-violet-700"
-                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                        ].join(" ")}
-                      >
-                        {translation.language}
-                      </button>
-                    ))
-                  ) : (
-                    <span className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-[13px] font-bold text-slate-500">
-                      생성된 번역 결과가 없습니다
-                    </span>
-                  )}
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    onClick={() => setIsEditing((current) => !current)}
+                    disabled={!selectedTranslation}
+                    className={[
+                      "flex h-9 items-center gap-2 rounded-lg border px-4 text-[13px] font-extrabold",
+                      isEditing
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 text-slate-700",
+                      !selectedTranslation ? "cursor-not-allowed opacity-50" : "",
+                    ].join(" ")}
+                  >
+                    <Edit3 size={15} />
+                    {isEditing ? "수정 완료" : "직접 수정"}
+                  </button>
+                  <button
+                    onClick={copySelectedTranslation}
+                    className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-4 text-[13px] font-extrabold text-slate-700"
+                  >
+                    <Copy size={15} />
+                    복사
+                  </button>
                 </div>
               </div>
-              <div className="flex shrink-0 gap-2">
-                <button
-                  onClick={() => setIsEditing((current) => !current)}
-                  disabled={!selectedTranslation}
-                  className={[
-                    "flex h-9 items-center gap-2 rounded-lg border px-4 text-[13px] font-extrabold",
-                    isEditing
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-slate-200 text-slate-700",
-                    !selectedTranslation ? "cursor-not-allowed opacity-50" : "",
-                  ].join(" ")}
-                >
-                  <Edit3 size={15} />
-                  {isEditing ? "수정 완료" : "직접 수정"}
-                </button>
-                <button
-                  onClick={copySelectedTranslation}
-                  className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-4 text-[13px] font-extrabold text-slate-700"
-                >
-                  <Copy size={15} />
-                  복사
-                </button>
+              <div className="flex max-w-full flex-nowrap gap-2 overflow-x-auto pb-1">
+                {translations.length > 0 ? (
+                  translations.map((translation) => (
+                    <button
+                      key={translation.language_code || translation.language}
+                      onClick={() => setSelectedLanguageCode(translation.language_code)}
+                      className={[
+                        "h-9 shrink-0 rounded-lg border px-4 text-[13px] font-extrabold transition",
+                        selectedTranslation?.language_code === translation.language_code
+                          ? "border-violet-500 bg-violet-50 text-violet-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                      ].join(" ")}
+                    >
+                      {translation.language}
+                    </button>
+                  ))
+                ) : (
+                  <span className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-[13px] font-bold text-slate-500">
+                    생성된 번역 결과가 없습니다
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -379,7 +379,7 @@ export function StepFourReview({
         leftLabel="이전으로"
         onBack={onBack}
         helper="검토 완료 후 다음 단계에서 게시 콘텐츠를 생성할 수 있습니다."
-        secondaryLabel="수정사항 저장"
+        secondaryLabel="재검수"
         rightLabel="검토 완료 및 콘텐츠 생성"
         onNext={onNext}
       />

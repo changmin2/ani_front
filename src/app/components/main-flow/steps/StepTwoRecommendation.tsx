@@ -98,7 +98,7 @@ export function StepTwoRecommendation({ onBack, onNext, input }: StepTwoRecommen
   const [selectedReviewChecks, setSelectedReviewChecks] = useState<string[]>([
     ...reviewChecks,
   ]);
-  const [isEvidenceOpen, setIsEvidenceOpen] = useState(false);
+  const [isEvidenceOpen, setIsEvidenceOpen] = useState(true);
   const [validationMessage, setValidationMessage] = useState("");
   const retrievedDocuments = input?.analysisResponse?.retrieved_documents ?? [];
   // 실행 전에 반드시 선택되어야 하는 설정들.
@@ -159,10 +159,10 @@ export function StepTwoRecommendation({ onBack, onNext, input }: StepTwoRecommen
         </div>
       </div>
 
-      <div className="mt-7 grid grid-cols-1 gap-6 lg:grid-cols-[560px_1fr]">
+      <div className="mt-7 grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[560px_1fr]">
         <SummaryPanel input={input} analysis={analysis} />
 
-        <section className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+        <section className="w-full rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
           <h2 className="text-[22px] font-black text-slate-950">AI 추천 실행 설정</h2>
           <p className="mt-2 text-[15px] font-medium text-slate-600">
             AI가 문서를 분석해 아래 설정을 추천했습니다. 필요 시 직접 수정할 수 있습니다.
@@ -314,26 +314,28 @@ export function StepTwoRecommendation({ onBack, onNext, input }: StepTwoRecommen
             </SettingRow>
           </div>
 
-          <button
-            onClick={() => setIsEvidenceOpen((open) => !open)}
-            className="mt-8 flex h-12 w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-5 text-[15px] font-extrabold text-slate-800"
-          >
-            <span className="flex items-center gap-3">
-              <Info size={18} className="text-amber-600" />
-              AI 추천 근거 보기
-            </span>
-            <ChevronDown
-              size={18}
-              className={[
-                "text-blue-700 transition",
-                isEvidenceOpen ? "rotate-180" : "",
-              ].join(" ")}
-            />
-          </button>
+          <div className="mt-8 w-full">
+            <button
+              onClick={() => setIsEvidenceOpen((open) => !open)}
+              className="flex h-12 w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-5 text-[15px] font-extrabold text-slate-800"
+            >
+              <span className="flex items-center gap-3">
+                <Info size={18} className="text-amber-600" />
+                AI 추천 근거 보기
+              </span>
+              <ChevronDown
+                size={18}
+                className={[
+                  "text-blue-700 transition",
+                  isEvidenceOpen ? "rotate-180" : "",
+                ].join(" ")}
+              />
+            </button>
 
-          {isEvidenceOpen && (
-            <EvidencePanel documents={retrievedDocuments} />
-          )}
+            {isEvidenceOpen && (
+              <EvidencePanel documents={retrievedDocuments} />
+            )}
+          </div>
 
           {validationMessage && (
             <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-5 py-4 text-[14px] font-extrabold text-rose-700">
@@ -371,7 +373,7 @@ function EvidencePanel({ documents }: { documents: RetrievedDocument[] }) {
         </span>
       </div>
 
-      <div className="mt-4 max-h-[360px] space-y-3 overflow-y-auto pr-1">
+      <div className="mt-4 max-h-[300px] space-y-3 overflow-y-auto pr-1">
         {documents.length > 0 ? (
           documents.map((document, index) => (
             <div
