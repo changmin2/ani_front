@@ -7,6 +7,7 @@ import {
   FileText,
   Info,
   Sparkles,
+  X,
 } from "lucide-react";
 import { AiCube } from "../shared/AiCube";
 import { BottomBar } from "../shared/BottomBar";
@@ -27,6 +28,7 @@ type FinanceTermMatch = {
 
 type TermLanguage = {
   label: string;
+  shortLabel: string;
   field: "term_en" | "term_vi" | "term_zh" | "term_kk";
 };
 
@@ -55,37 +57,73 @@ function getSelectedTermLanguages(settings: FlowExecutionSettings | null): TermL
 
   return languages
     .map((language) => {
-      if (language.startsWith("영어")) return { label: "EN", field: "term_en" } as const;
-      if (language.startsWith("중국어")) return { label: "ZH", field: "term_zh" } as const;
-      if (language.startsWith("베트남어")) return { label: "VI", field: "term_vi" } as const;
-      if (language.startsWith("카자흐스탄어")) return { label: "KK", field: "term_kk" } as const;
+      if (language.startsWith("영어")) return { label: "영어", shortLabel: "EN", field: "term_en" } as const;
+      if (language.startsWith("중국어")) return { label: "중국어", shortLabel: "ZH", field: "term_zh" } as const;
+      if (language.startsWith("베트남어")) return { label: "베트남어", shortLabel: "VI", field: "term_vi" } as const;
+      if (language.startsWith("카자흐스탄어")) return { label: "카자흐스탄어", shortLabel: "KK", field: "term_kk" } as const;
 
       return null;
     })
     .filter((language): language is TermLanguage => Boolean(language));
 }
 
-function getCompletedDescription(input: FlowInput | null) {
-  // 백엔드 분석 결과에서 실제 추출된 포함 정보/핵심 수치/주의 문구 개수를 모아
-  // 3페이지 "방금 완료한 작업" 문장으로 보여준다.
+function getCompletedWorkSummary(input: FlowInput | null) {
+  // 기본 카드에는 핵심 카운트만 보여주고, 전체 목록은 자세히 보기 모달에서 보여준다.
   const analysis = input?.analysisResponse?.analysis;
   const includedInformation = analysis?.included_information ?? [];
   const keyNumbers = analysis?.key_numbers_preview ?? [];
-  const legalNoticeCount = analysis?.legal_notice_detection?.count ?? 0;
+  const noticeItems = analysis?.legal_notice_detection?.items ?? [];
+  const legalNoticeCount = analysis?.legal_notice_detection?.count ?? noticeItems.length;
+  const structure = analysis?.document_structure;
+  const metrics = [
+    { label: "문서 제목", value: structure?.title ? "확인" : "미감지", tone: "blue" as const },
+    { label: "포함 정보", value: `${includedInformation.length}건`, tone: "emerald" as const },
+    { label: "핵심 수치", value: `${keyNumbers.length}건`, tone: "violet" as const },
+    { label: "주의 문구", value: `${legalNoticeCount}건`, tone: "amber" as const },
+  ];
+  const highlights = [
+    structure?.title ? `제목: ${structure.title}` : "",
+    ...includedInformation.slice(0, 2),
+    ...keyNumbers.slice(0, 2).map((item) => `${item.label} ${item.value}`),
+  ].filter(Boolean);
 
-  const extractedItems = [
-    ...includedInformation,
-    ...keyNumbers.map((item) => item.label),
-    legalNoticeCount > 0 ? `법적/주의 문구 ${legalNoticeCount}건` : "",
-  ]
-    .filter(Boolean)
-    .filter((item, index, array) => array.indexOf(item) === index);
-
-  if (extractedItems.length === 0) {
-    return "문서 구조와 주요 정보를 추출했습니다.";
-  }
-
-  return `문서에서 ${formatList(extractedItems)}을 추출했습니다.`;
+  return {
+    description: metrics.some((metric) => metric.value !== "0건" && metric.value !== "미감지")
+      ? "문서 구조, 포함 정보, 핵심 수치까지 추출을 마쳤습니다."
+      : "문서 구조와 주요 정보를 추출했습니다.",
+    metrics,
+    highlights,
+    detailGroups: [
+      {
+        title: "문서 구조",
+        items: [
+          structure?.title ? `제목: ${structure.title}` : "",
+          ...(structure?.body_sections ?? []).map((item) => `본문: ${item}`),
+          ...(structure?.notice_phrases ?? []).map((item) => `주의 문구: ${item}`),
+        ].filter(Boolean),
+      },
+      {
+        title: "포함 정보",
+        items: includedInformation,
+      },
+      {
+        title: "핵심 수치",
+        items: keyNumbers.map((item) =>
+          item.source_text
+            ? `${item.label}: ${item.value} · ${item.source_text}`
+            : `${item.label}: ${item.value}`
+        ),
+      },
+      {
+        title: "법적/주의 문구",
+        items: noticeItems.length > 0
+          ? noticeItems
+          : legalNoticeCount > 0
+            ? [`감지된 주의 문구 ${legalNoticeCount}건`]
+            : [],
+      },
+    ],
+  };
 }
 
 function getNextTaskDescription(settings: FlowExecutionSettings | null) {
@@ -199,11 +237,12 @@ export function StepThreeProcessing({
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationError, setTranslationError] = useState("");
   const [termMatches, setTermMatches] = useState<FinanceTermMatch[]>([]);
+  const [isCompletedDetailOpen, setIsCompletedDetailOpen] = useState(false);
   const [isLoadingTerms, setIsLoadingTerms] = useState(false);
   const [hasLoadedTerms, setHasLoadedTerms] = useState(false);
   const [termError, setTermError] = useState("");
   // 아래 값들은 1페이지 분석 결과와 2페이지 실행 설정을 조합해 만든 3페이지 표시용 데이터다.
-  const completedDescription = getCompletedDescription(input);
+  const completedWorkSummary = getCompletedWorkSummary(input);
   const nextTaskDescription = getNextTaskDescription(settings);
   const documentStructure = getDocumentStructure(input);
   const keyNumbers = input?.analysisResponse?.analysis.key_numbers_preview ?? [];
@@ -417,7 +456,11 @@ export function StepThreeProcessing({
             <ProcessItem
               done
               title="방금 완료한 작업"
-              desc={completedDescription}
+              desc={completedWorkSummary.description}
+              metrics={completedWorkSummary.metrics}
+              highlights={completedWorkSummary.highlights}
+              actionLabel="자세히 보기"
+              onAction={() => setIsCompletedDetailOpen(true)}
             />
             <ProcessItem
               active={!translationResult}
@@ -487,7 +530,11 @@ export function StepThreeProcessing({
                           <div className="mt-2 grid grid-cols-1 gap-1 text-[13px] leading-6 text-slate-500">
                             {selectedTermLanguages.map((language) => (
                               <span key={language.field}>
-                                {language.label} {term[language.field] || "-"}
+                                <b className="mr-2 text-slate-700">{language.label}</b>
+                                <span className="mr-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-extrabold text-slate-500">
+                                  {language.shortLabel}
+                                </span>
+                                {term[language.field] || "-"}
                               </span>
                             ))}
                           </div>
@@ -566,6 +613,13 @@ export function StepThreeProcessing({
         </section>
       </div>
 
+      {isCompletedDetailOpen && (
+        <CompletedWorkDialog
+          groups={completedWorkSummary.detailGroups}
+          onClose={() => setIsCompletedDetailOpen(false)}
+        />
+      )}
+
       <BottomBar
         leftLabel="이전으로"
         onBack={onBack}
@@ -605,11 +659,19 @@ function ProcessItem({
   active,
   title,
   desc,
+  metrics,
+  highlights,
+  actionLabel,
+  onAction,
 }: {
   done?: boolean;
   active?: boolean;
   title: string;
   desc: string;
+  metrics?: { label: string; value: string; tone: "blue" | "emerald" | "violet" | "amber" }[];
+  highlights?: string[];
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <div className="flex gap-5">
@@ -626,6 +688,33 @@ function ProcessItem({
           {title}
         </h3>
         <p className="mt-2 text-[14px] font-medium leading-7 text-slate-600">{desc}</p>
+        {metrics && metrics.length > 0 && (
+          <div className="mt-3 grid grid-cols-1 gap-2">
+            {metrics.map((metric) => (
+              <SummaryMetric key={metric.label} {...metric} />
+            ))}
+          </div>
+        )}
+        {highlights && highlights.length > 0 && (
+          <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+            <p className="text-[12px] font-black text-emerald-700">대표 추출 항목</p>
+            <div className="mt-2 space-y-1.5">
+              {highlights.slice(0, 4).map((item) => (
+                <p key={item} className="truncate text-[13px] font-semibold text-slate-700">
+                  {item}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+        {actionLabel && onAction && (
+          <button
+            onClick={onAction}
+            className="mt-3 h-8 rounded-lg border border-slate-200 px-3 text-[12px] font-extrabold text-slate-700 hover:bg-slate-50"
+          >
+            {actionLabel}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -653,6 +742,89 @@ function PreviewCard({
         <h3 className="font-extrabold text-slate-950">{title}</h3>
       </div>
       <div className="p-5">{children}</div>
+    </div>
+  );
+}
+
+function SummaryMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "blue" | "emerald" | "violet" | "amber";
+}) {
+  const dotClass = {
+    blue: "bg-blue-500",
+    emerald: "bg-emerald-500",
+    violet: "bg-violet-500",
+    amber: "bg-amber-500",
+  }[tone];
+
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+        <p className="truncate text-[13px] font-bold text-slate-600">{label}</p>
+      </div>
+      <p className="shrink-0 text-[14px] font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function CompletedWorkDialog({
+  groups,
+  onClose,
+}: {
+  groups: { title: string; items: string[] }[];
+  onClose: () => void;
+}) {
+  const visibleGroups = groups.filter((group) => group.items.length > 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-6">
+      <section className="max-h-[82vh] w-full max-w-[760px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <div>
+            <h2 className="text-[22px] font-black text-slate-950">방금 완료한 작업 상세</h2>
+            <p className="mt-1 text-[14px] font-semibold text-slate-500">분석 단계에서 추출된 전체 항목입니다.</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+            aria-label="닫기"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="max-h-[64vh] overflow-y-auto px-6 py-5">
+          {visibleGroups.length > 0 ? (
+            <div className="space-y-5">
+              {visibleGroups.map((group) => (
+                <div key={group.title}>
+                  <h3 className="text-[15px] font-black text-slate-950">{group.title}</h3>
+                  <div className="mt-3 grid gap-2">
+                    {group.items.map((item, index) => (
+                      <div
+                        key={`${group.title}-${index}`}
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] font-semibold leading-6 text-slate-700"
+                      >
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-5 text-[14px] font-semibold text-slate-600">
+              표시할 상세 항목이 없습니다.
+            </p>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
