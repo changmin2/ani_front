@@ -152,12 +152,15 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
           <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="grid grid-cols-2 rounded-lg border border-slate-200 bg-white shadow-sm">
               <button
+                type="button"
+                disabled={isAnalyzing}
                 onClick={() => {
                   setMode("file");
                   setErrorMessage("");
                 }}
                 className={[
                   "flex h-11 items-center justify-center gap-3 rounded-lg text-[16px]",
+                  isAnalyzing ? "cursor-not-allowed opacity-60" : "",
                   mode === "file"
                     ? "bg-white font-extrabold text-red-600 shadow"
                     : "font-semibold text-slate-600",
@@ -167,12 +170,15 @@ export function StepOneUpload({ onNext }: { onNext: (input: FlowInput) => void }
                 파일 업로드
               </button>
               <button
+                type="button"
+                disabled={isAnalyzing}
                 onClick={() => {
                   setMode("text");
                   setErrorMessage("");
                 }}
                 className={[
                   "flex h-11 items-center justify-center gap-3 rounded-lg text-[16px]",
+                  isAnalyzing ? "cursor-not-allowed opacity-60" : "",
                   mode === "text"
                     ? "bg-white font-extrabold text-red-600 shadow"
                     : "font-semibold text-slate-600",
